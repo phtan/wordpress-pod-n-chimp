@@ -7,36 +7,126 @@ Author: Pheng Heong, Tan
 Author URI: https://plus.google.com/106730175494661681756
 */
 
-$dbName = "wordpress";
+require_once(dirname(dirname(dirname(dirname( __FILE__ )))) . '/wp-load.php' ); // TODO find a better way to locate wp-load.php as it might not always be in the WP root folder.
+
+// DB parameters
 $dbTableName = "wp_users";
 $dbEmailColumn = "user_email";
 
-$debug = true;
+// MailChimp constants
+$emailKey = "email"; // key as in array key.
 
-if (!empty($_POST)) {
+// Constants for this plug-in.
+$chimpme_debug = true;
+
+if (!empty($_POST)) { // TODO check instead for a key appended to the URL given to the mailchimp API.
 
 	logRequest();
 
-	// check this is an unsubscribe
+	if (isset($_POST['type'])) {
 
-	// check the unsubscriber's email exists in our database.
+		switch($_POST['type']) {
 
-	// unsubscribe from database
+			case 'unsubscribe':
+				chimpme_unsubscribe($_POST['data']);
+				break;
+
+			default:
+				wp_die("ChimpMe: Unknown action requested by webhook: "
+					. $_POST['type']);
+		}
+	
+	} else {
+		// The 'type' key has no value.
+		// MailChimp's webhook might have changed.
+		// Do nothing for now.
+	}
 
 } else { // There hasn't been a POST request to this file.
 
-	if ($debug) {
-		stubInPostRequest();
+	if ($chimpme_debug) {
+		sendPostRequestStub();
 	}
 }
 
+/*
+ * This method removes the unsubscriber from an user-maintained
+ * database.
+ * @param data
+ *	An array of values from MailChimp. // TODO confirm it is an array type.
+ */
+function chimpme_unsubscribe($data) {
+
+	global $wpdb;
+	global $dbTableName, $dbEmailColumn;
+	// TODO use prepare statements in wpdb calls below.
+	
+	$unsubscriber = chimpme_getEmail($data);
+
+	echo "\nUnsubscribing $unsubscriber..."; // debug
+
+	$query = "SELECT * FROM {$wpdb->{$dbTableName}}
+		WHERE $dbEmailColumn = $unsubscriber";
+	$isInDatabase = null;
+
+	$subscriber = $wpdb->get_row($query);
+	$isInDatabase = $subscriber;
+
+	if ($isInDatabase != null) {
+
+		echo "Unsubscribing $unsubscriber..." . "\n"; // debug
+
+
+		// TODO the curly braces are not evaluating right, giving the error
+		// in the dashboard:
+		// Notice: Undefined property: wpdb::$wp_users in G:\xampplite\htdocs\test-site\blog\wp-includes\wp-db.php on line 575
+		$deleteQuery = "DELETE FROM {$wpdb->{$dbTableName}}
+			WHERE $dbEmailColumn = '$unsubscriber'";
+		$deleteResult = $wpdb->query($deleteQuery);
+
+		if ($deleteResult === false) { // identicality check as both 0 and false might be returned.
+			wp_die("Database error. Unable to delete $unsubscriber.");
+		}
+
+		echo "Unsubscribed." . "\n"; // debug		
+	}
+}
 
 /*
- * Helper method to simulate a POST request fired by thewebhook
+ * Helper method to retrieve the email from the webhook payload.
+ */
+function chimpme_getEmail($payload) {
+
+	$result = "";
+	global $chimpme_debug;
+
+	if ($chimpme_debug) {
+		// Payload will be in JSON format, as coded in the
+		// fireUnsubRequest method.
+
+		$json = stripslashes($payload); // Undo any quotes from PHP or WP in the POST stub.
+
+		echo "Received stub request: " . $json . "\n"; // debug.
+
+		$payloadArray = json_decode($json, true);
+
+		$result = $payloadArray['email'];
+
+	} else {
+		// TODO replace the line below.
+		echo "chimpme_getEmail: Cannot get email - Not implemented yet.";
+	}
+
+	echo "chimpme_getEmail: Got the email " . $result . "\n"; // debug.
+	return $result;
+}
+
+/*
+ * Helper method to simulate a POST request fired by the webhook
  * at MailChimp.
  */
-function stubInPostRequest() {
-	add_action('admin_footer', 'fireUnsubRequest');
+function sendPostRequestStub() {
+	add_action('admin_footer', 'fireUnsubRequest'); // only works upon entering an admin page. (ie. WP Dashboard).
 }
 
 /*
@@ -44,15 +134,15 @@ function stubInPostRequest() {
  */
 function fireUnsubRequest() {
 
-	$unsubscriberEmail = 'user1@echoandhere.com';
+	$unsubscriberEmail = 'user11@echoandhere.com';
 	$requestTarget = plugins_url(basename(__FILE__), __FILE__); // Post back to this file.
-	echo $requestTarget;
 
-	// Sample unsubscribe request:
+	// Sample unsubscribe requestst:
 	// 
 	// type: unsubscribe
 	// fired_at: 2013-07-02 09:58:09
     // data: {"action"=>"unsub", "reason"=>"manual", "id"=>"8249032551", "email"=>"phtan90@gmail.com", "email_type"=>"html", "ip_opt"=>"137.132.202.66", "web_id"=>"17701457", "campaign_id"=>"6fb66e1caf", "merges"=>{"EMAIL"=>"phtan90@gmail.com", "FNAME"=>"PH", "LNAME"=>"at Gmail"}, "list_id"=>"b970dd90fa"}
+	echo "Sending POST stub...\n"; //debug
 
     $response = wp_remote_post( $requestTarget, array(
 		'method' => 'POST',
@@ -76,6 +166,8 @@ function fireUnsubRequest() {
 	    )
     );
 
+    echo "sent.\n"; // debug.
+
     if( is_wp_error( $response ) ) {
     	$error_message = $response->get_error_message();
     	echo "Something went wrong: $error_message";
@@ -91,8 +183,6 @@ function fireUnsubRequest() {
  * Deposits a CSV file in this plug-in directory.
 */
 function logRequest() {
-
-	echo "Logging..."; // debug
 
 	$file = fopen("POST_request_log.csv", "w");
 
