@@ -13,20 +13,23 @@ $dbEmailColumn = "user_email";
 
 $debug = true;
 
-if ($debug) {
-	stubInPostRequest();
-}
-
-logRequest();
-
 if (!empty($_POST)) {
+
+	logRequest();
 
 	// check this is an unsubscribe
 
 	// check the unsubscriber's email exists in our database.
 
 	// unsubscribe from database
+
+} else { // There hasn't been a POST request to this file.
+
+	if ($debug) {
+		stubInPostRequest();
+	}
 }
+
 
 /*
  * Helper method to simulate a POST request fired by thewebhook
@@ -36,56 +39,51 @@ function stubInPostRequest() {
 	add_action('admin_footer', 'fireUnsubRequest');
 }
 
-
-
 /*
  * Simulates a POST request from an MailChimp unsubscribe webhook.
  */
 function fireUnsubRequest() {
 
 	$unsubscriberEmail = 'user1@echoandhere.com';
-	$requestTarget = __FILE__; // Post back to this file.
+	$requestTarget = plugins_url(basename(__FILE__), __FILE__); // Post back to this file.
+	echo $requestTarget;
 
 	// Sample unsubscribe request:
 	// 
 	// type: unsubscribe
 	// fired_at: 2013-07-02 09:58:09
-    // data: {"action": "unsub", "reason": "manual", "id": "8249032551", 
-    // "email": "phtan90@gmail.com", "email_type": "html", 
-    // "ip_opt": "137.132.202.66", "web_id": "17701457", 
-    // "campaign_id": "6fb66e1caf", "merges": {"EMAIL": "phtan90@gmail.com", 
-    // "FNAME": "PH", "LNAME": "at Gmail"}, "list_id": "b970dd90fa"}
+    // data: {"action"=>"unsub", "reason"=>"manual", "id"=>"8249032551", "email"=>"phtan90@gmail.com", "email_type"=>"html", "ip_opt"=>"137.132.202.66", "web_id"=>"17701457", "campaign_id"=>"6fb66e1caf", "merges"=>{"EMAIL"=>"phtan90@gmail.com", "FNAME"=>"PH", "LNAME"=>"at Gmail"}, "list_id"=>"b970dd90fa"}
 
-    echo "Beginning Javascript POST request..."; // debug
-?>
+    $response = wp_remote_post( $requestTarget, array(
+		'method' => 'POST',
+		'timeout' => 45,
+		'redirection' => 5,
+		'httpversion' => '1.0',
+		'blocking' => true,
+		'headers' => array(),
+		'body' => array( 'type' => 'unsubscribe',
+			'fired_at' =>  date(DATE_ISO8601),
+			'data' => json_encode(
+				array(
+				"action"=>"unsub", "reason"=>"manual",
+				"id"=>"8249032551", "email"=>$unsubscriberEmail,
+				"email_type"=>"html", "ip_opt"=>"137.132.202.66",
+				"web_id"=>"17701457", "campaign_id"=>"6fb66e1caf",
+				"merges"=> array("EMAIL"=>$unsubscriberEmail,
+					"FNAME"=>"PH", "LNAME"=>"at Gmail"),
+				"list_id"=>"b970dd90fa"))),
+		'cookies' => array()
+	    )
+    );
 
-<script type="text/javascript">
+    if( is_wp_error( $response ) ) {
+    	$error_message = $response->get_error_message();
+    	echo "Something went wrong: $error_message";
+    } else {
+    	echo 'Response: ';
+    	print_r( $response );
+    }
 
-console.log("Starting JQuery..."); // debug.
-
-jQuery(document).ready(function($) {
-
-	console.log("Hi " + <?php echo "\"" . $requestTarget . "\""; ?>); // debug.
- 
-	var request = {
-		type: 'unsubscribe',
-		fired_at: $.now(),
-		data: {action: "unsub", reason: "manual", id: "8249032551", 
- 			email: <?php echo "\"" . $unsubscriberEmail . "\"" ?>, email_type: "html", 
-     		ip_opt: "137.132.202.66", web_id: "17701457", 
-     		campaign_id: "6fb66e1caf",
-     		merges: {EMAIL: <?php echo "\"" . $unsubscriberEmail . "\"" ?>, FNAME: "PH", LNAME: "at Gmail"},
-     		list_id: "b970dd90fa"}
-	};
-
-	$.post(<?php echo $requestTarget; ?>, request, function(reply) {
-		alert("Sent POST request and received the reply: " + reply);
-	});
-});
-</script>
-
-<?php
-echo "Finished running Javascript."; // debug
 }
 
 /*
