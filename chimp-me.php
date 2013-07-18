@@ -63,32 +63,28 @@ function chimpme_unsubscribe($data) {
 	
 	$unsubscriber = chimpme_getEmail($data);
 
-	echo "\nUnsubscribing $unsubscriber..."; // debug
-
-	$query = "SELECT * FROM {$wpdb->{$dbTableName}}
-		WHERE $dbEmailColumn = $unsubscriber";
-	$isInDatabase = null;
-
+	$query = "SELECT * FROM $dbTableName
+		WHERE $dbEmailColumn = '$unsubscriber'";
 	$subscriber = $wpdb->get_row($query);
-	$isInDatabase = $subscriber;
 
-	if ($isInDatabase != null) {
+	if ($subscriber != null) {
 
-		echo "Unsubscribing $unsubscriber..." . "\n"; // debug
+		echo "Unsubscribing $unsubscriber..." . "\n"; // debug.
 
-
-		// TODO the curly braces are not evaluating right, giving the error
-		// in the dashboard:
-		// Notice: Undefined property: wpdb::$wp_users in G:\xampplite\htdocs\test-site\blog\wp-includes\wp-db.php on line 575
-		$deleteQuery = "DELETE FROM {$wpdb->{$dbTableName}}
+		$deleteQuery = "DELETE FROM $dbTableName
 			WHERE $dbEmailColumn = '$unsubscriber'";
+		echo "Query string created."; // debug
 		$deleteResult = $wpdb->query($deleteQuery);
+		echo "Query sent."; // debug.
 
 		if ($deleteResult === false) { // identicality check as both 0 and false might be returned.
 			wp_die("Database error. Unable to delete $unsubscriber.");
 		}
 
 		echo "Unsubscribed." . "\n"; // debug		
+	} else {
+		// TODO handle non-existent non-subscriber more gracefully.
+		wp_die("Unable to unsubscribe. $unsubscriber does not exist.");
 	}
 }
 
@@ -134,7 +130,7 @@ function sendPostRequestStub() {
  */
 function fireUnsubRequest() {
 
-	$unsubscriberEmail = 'user11@echoandhere.com';
+	$unsubscriberEmail = 'user12@echoandhere.com';
 	$requestTarget = plugins_url(basename(__FILE__), __FILE__); // Post back to this file.
 
 	// Sample unsubscribe requestst:
