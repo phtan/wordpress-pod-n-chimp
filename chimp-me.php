@@ -63,25 +63,27 @@ function chimpme_unsubscribe($data) {
 	
 	$unsubscriber = chimpme_getEmail($data);
 
+	
+
 	$query = "SELECT * FROM $dbTableName
 		WHERE $dbEmailColumn = '$unsubscriber'";
 	$subscriber = $wpdb->get_row($query);
 
 	if ($subscriber != null) {
 
-		echo "Unsubscribing $unsubscriber..." . "\n"; // debug.
+		
 
 		$deleteQuery = "DELETE FROM $dbTableName
 			WHERE $dbEmailColumn = '$unsubscriber'";
-		echo "Query string created."; // debug
+		
 		$deleteResult = $wpdb->query($deleteQuery);
-		echo "Query sent."; // debug.
+		
 
 		if ($deleteResult === false) { // identicality check as both 0 and false might be returned.
 			wp_die("Database error. Unable to delete $unsubscriber.");
 		}
 
-		echo "Unsubscribed." . "\n"; // debug		
+		
 	} else {
 		// TODO handle non-existent non-subscriber more gracefully.
 		wp_die("Unable to unsubscribe. $unsubscriber does not exist.");
@@ -102,7 +104,7 @@ function chimpme_getEmail($payload) {
 
 		$json = stripslashes($payload); // Undo any quotes from PHP or WP in the POST stub.
 
-		echo "Received stub request: " . $json . "\n"; // debug.
+		
 
 		$payloadArray = json_decode($json, true);
 
@@ -113,7 +115,7 @@ function chimpme_getEmail($payload) {
 		echo "chimpme_getEmail: Cannot get email - Not implemented yet.";
 	}
 
-	echo "chimpme_getEmail: Got the email " . $result . "\n"; // debug.
+	
 	return $result;
 }
 
@@ -162,7 +164,7 @@ function fireUnsubRequest() {
 	    )
     );
 
-    echo "sent.\n"; // debug.
+    
 
     if( is_wp_error( $response ) ) {
     	$error_message = $response->get_error_message();
