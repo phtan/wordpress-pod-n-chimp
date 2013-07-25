@@ -14,10 +14,13 @@ $dbTableName = "wp_users";
 $dbEmailColumn = "user_email";
 
 // MailChimp constants
-$emailKey = "email"; // key as in array key.
+$payloadKey = "data"; // key as in array key.
+$emailKey = "email"; 
 
 // Constants for this plug-in.
-$chimpme_debug = true;
+$requestLog = "POST_request_log.csv";
+$operationsLog = "chimpme_log.txt";
+$chimpme_usingStubs = false; // Set this to false if receiving webhooks from MailChimp.
 
 if (!empty($_POST)) { // TODO check instead for a key appended to the URL given to the mailchimp API.
 
@@ -44,13 +47,13 @@ if (!empty($_POST)) { // TODO check instead for a key appended to the URL given 
 
 } else { // There hasn't been a POST request to this file.
 
-	if ($chimpme_debug) {
+	if ($chimpme_usingStubs) {
 		sendPostRequestStub();
 	}
 }
 
 /*
- * This method removes the unsubscriber from an user-maintained
+ * This method deletes the unsubscriber from an user-maintained
  * database.
  * @param data
  *	An array of values from MailChimp. // TODO confirm it is an array type.
@@ -62,8 +65,7 @@ function chimpme_unsubscribe($data) {
 	// TODO use prepare statements in wpdb calls below.
 	
 	$unsubscriber = chimpme_getEmail($data);
-
-	
+    chimpme_log("Unsubscribing $unsubscriber...");
 
 	$query = "SELECT * FROM $dbTableName
 		WHERE $dbEmailColumn = '$unsubscriber'";
@@ -91,30 +93,28 @@ function chimpme_unsubscribe($data) {
 }
 
 /*
- * Helper method to retrieve the email from the webhook payload.
+ * Helper method to retrieve the email from the POST data sent by the webhook.
  */
 function chimpme_getEmail($payload) {
 
 	$result = "";
-	global $chimpme_debug;
+	global $chimpme_usingStubs;
+	global $payloadKey, $emailKey;
 
-	if ($chimpme_debug) {
-		// Payload will be in JSON format, as coded in the
-		// fireUnsubRequest method.
-
+	if ($chimpme_usingStubs) {
+		// The HTTP request is a stub from the fireUnsubRequest method.
+		// Receive the JSON payload.
 		$json = stripslashes($payload); // Undo any quotes from PHP or WP in the POST stub.
-
-		
 
 		$payloadArray = json_decode($json, true);
 
 		$result = $payloadArray['email'];
 
 	} else {
-		// TODO replace the line below.
-		echo "chimpme_getEmail: Cannot get email - Not implemented yet.";
+		// $payload should be an array containing data related to the
+		// MailChimp event. (eg. Unsubscribe).
+		$result = $payload[$emailKey];
 	}
-
 	
 	return $result;
 }
@@ -182,14 +182,55 @@ function fireUnsubRequest() {
 */
 function logRequest() {
 
-	$file = fopen("POST_request_log.csv", "w");
+	global $requestLog;
+	global $payloadKey;
 
-	foreach ($_POST as $key => $value) {
-		$keyValuePair = array($key, $value);
-		fputcsv($file, $keyValuePair);
+	if (!$file = fopen($requestLog, "w")) {
+
+		$error = "Cannot open file $requestLog";
+
+		echo $error;
+		chimpme_log($error);
+
+	} else {
+
+		foreach ($_POST as $key => $value) {
+
+			$keyValuePair = array($key, $value);
+			fputcsv($file, $keyValuePair);
+
+			if ($key = $payloadKey && is_array($value)) { // Check that this is a MailChimp payload.
+				fputcsv($file, array("(CHIMP-ME NOTICE)", "===== Printing contents of \"$payloadKey\" ====="));
+
+				foreach ($value as $k => $v) { // Print the inner array.
+					$pair = array($k, $v);
+					fputcsv($file, $pair);
+				}
+
+				fputcsv($file, array("(CHIMP-ME NOTICE)", "===== Printed \"$payloadKey\" ====="));
+			}
+		}
+
+		fclose($file);
 	}
+}
 
-	fclose($file);
+/*
+ * Helper method. Logs the specified message to a text file.
+ * @param $message
+ *		The message to log, of type string.
+ */
+function chimpme_log($message) {
+	global $operationsLog;
+
+	$msgWithTime = $_SERVER['REQUEST_TIME'] . ": "
+		. $message . PHP_EOL;
+
+	if ($file = fopen($operationsLog, "a")) {
+		fwrite($file, $msgWithTime);
+		fclose($file);
+	}
+	
 }
 
 ?>
