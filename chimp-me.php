@@ -8,6 +8,7 @@ Author URI: https://plus.google.com/106730175494661681756
 */
 
 require_once(dirname(dirname(dirname(dirname( __FILE__ )))) . '/wp-load.php' ); // TODO find a better way to locate wp-load.php as it might not always be in the WP root folder.
+require_once('/lib/KLogger.php');
 
 // DB parameters
 $dbTableName = "wp_users";
@@ -20,7 +21,9 @@ $emailKey = "email";
 // Constants for this plug-in.
 $requestLog = "POST_request_log.csv";
 $operationsLog = "chimpme_log.txt";
-$chimpme_usingStubs = false; // Set this to false if receiving webhooks from MailChimp.
+$logDirectory = dirname(__FILE__) . "/logs";
+$chimpme_usingStubs = true; // Set this to false if receiving webhooks from MailChimp.
+$logger = KLogger::instance($logDirectory, KLogger::DEBUG);
 
 if (!empty($_POST)) { // TODO check instead for a key appended to the URL given to the mailchimp API.
 
@@ -35,7 +38,7 @@ if (!empty($_POST)) { // TODO check instead for a key appended to the URL given 
 				break;
 
 			default:
-				wp_die("ChimpMe: Unknown action requested by webhook: "
+				chimpme_log('error', "ChimpMe: Unknown action requested by webhook: "
 					. $_POST['type']);
 		}
 	
@@ -62,18 +65,17 @@ function chimpme_unsubscribe($data) {
 
 	global $wpdb;
 	global $dbTableName, $dbEmailColumn;
+	global $logger;
 	// TODO use prepare statements in wpdb calls below.
 	
 	$unsubscriber = chimpme_getEmail($data);
-    chimpme_log("Unsubscribing $unsubscriber...");
+    chimpme_log('notice', "Unsubscribing $unsubscriber...");
 
 	$query = "SELECT * FROM $dbTableName
 		WHERE $dbEmailColumn = '$unsubscriber'";
 	$subscriber = $wpdb->get_row($query);
 
 	if ($subscriber != null) {
-
-		
 
 		$deleteQuery = "DELETE FROM $dbTableName
 			WHERE $dbEmailColumn = '$unsubscriber'";
@@ -82,13 +84,12 @@ function chimpme_unsubscribe($data) {
 		
 
 		if ($deleteResult === false) { // identicality check as both 0 and false might be returned.
-			wp_die("Database error. Unable to delete $unsubscriber.");
+			chimpme_log('error', "Database error. Unable to delete $unsubscriber.");
 		}
 
 		
 	} else {
-		// TODO handle non-existent non-subscriber more gracefully.
-		wp_die("Unable to unsubscribe. $unsubscriber does not exist.");
+		chimpme_log('warn', "Unable to unsubscribe. $unsubscriber does not exist.");
 	}
 }
 
@@ -212,6 +213,9 @@ function logRequest() {
 		}
 
 		fclose($file);
+
+		
+		
 	}
 }
 
@@ -219,18 +223,33 @@ function logRequest() {
  * Helper method. Logs the specified message to a text file.
  * @param $message
  *		The message to log, of type string.
+ * @param $severity
+ * 		The severity of the message, limited to "error", warn", "notice" and "info" for now.
  */
-function chimpme_log($message) {
-	global $operationsLog;
+function chimpme_log($severity, $message) {
+	global $logger;
 
-	$msgWithTime = $_SERVER['REQUEST_TIME'] . ": "
-		. $message . PHP_EOL;
+	switch ($severity) {
+	 	case 'error':
+	 		$logger->logError($message);
+	 		break;
+	 	
+	 	case 'warn':
+	 		$logger->logWarn($message);
+	 		break;
 
-	if ($file = fopen($operationsLog, "a")) {
-		fwrite($file, $msgWithTime);
-		fclose($file);
-	}
-	
+	 	case 'notice':
+	 		$logger->logNotice($message);
+	 		break;
+
+	 	case 'info':
+	 		$logger->logInfo($message);
+	 		break;
+
+	 	default:
+	 		$logger->logInfo($message);
+	 		break;
+	 } 
 }
 
 ?>
