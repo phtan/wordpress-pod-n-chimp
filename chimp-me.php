@@ -11,30 +11,40 @@ require_once(dirname(dirname(dirname(dirname( __FILE__ )))) . '/wp-load.php' ); 
 require_once('/lib/KLogger.php');
 
 // DB parameters
-$dbTableName = "wp_users";
-$dbEmailColumn = "user_email";
+$dbTableName = "wp_pods_contact";
+$dbEmailColumn = "email";
 
 // MailChimp constants
-$payloadKey = "data"; // key as in array key.
-$emailKey = "email"; 
+$webhookEventKey = 'type'; // key as in array key.
+$unsubscribeEvent = 'unsubscribe';
+$updateEvent = 'profile';
+
+$payloadKey = 'data'; 
+$emailKey = 'email'; 
 
 // Constants for this plug-in.
 $requestLog = "POST_request_log.csv";
-$operationsLog = "chimpme_log.txt";
 $logDirectory = dirname(__FILE__) . "/logs";
-$chimpme_usingStubs = true; // Set this to false if receiving webhooks from MailChimp.
 $logger = KLogger::instance($logDirectory, KLogger::DEBUG);
 
+$chimpme_usingStubs = true; // Set this to false if receiving webhooks from MailChimp (ie. when this plug-in is sent to production.)
+
+// Main logic of this plug-in.
 if (!empty($_POST)) { // TODO check instead for a key appended to the URL given to the mailchimp API.
 
 	logRequest();
 
-	if (isset($_POST['type'])) {
+	if (isset($_POST[$webhookEventKey])) {
 
-		switch($_POST['type']) {
+		switch($_POST[$webhookEventKey]) {
 
-			case 'unsubscribe':
-				chimpme_unsubscribe($_POST['data']);
+			case $unsubscribeEvent:
+				chimpme_unsubscribe($_POST['payloadKey']);
+				chimpme_log('info', $_POST); // debug
+				break;
+
+			case $updateEvent:
+				chimpme_update($_POST['payloadKey']);
 				break;
 
 			default:
@@ -46,6 +56,7 @@ if (!empty($_POST)) { // TODO check instead for a key appended to the URL given 
 		// The 'type' key has no value.
 		// MailChimp's webhook might have changed.
 		// Do nothing for now.
+		// TODO log something here.
 	}
 
 } else { // There hasn't been a POST request to this file.
@@ -65,7 +76,9 @@ function chimpme_unsubscribe($data) {
 
 	global $wpdb;
 	global $dbTableName, $dbEmailColumn;
-	global $logger;
+
+	$dbUnsubscribeColumn = "newsletter";
+	$dbUnsubscribeBit = 0;
 	// TODO use prepare statements in wpdb calls below.
 	
 	$unsubscriber = chimpme_getEmail($data);
@@ -77,21 +90,46 @@ function chimpme_unsubscribe($data) {
 
 	if ($subscriber != null) {
 
-		$deleteQuery = "DELETE FROM $dbTableName
+		$unsubscribeQuery = "UPDATE $dbTableName
+			SET $dbUnsubscribeColumn = '$dbUnsubscribeBit'
 			WHERE $dbEmailColumn = '$unsubscriber'";
-		
-		$deleteResult = $wpdb->query($deleteQuery);
-		
 
-		if ($deleteResult === false) { // identicality check as both 0 and false might be returned.
+		// $deleteQuery = "DELETE FROM $dbTableName
+		// 	WHERE $dbEmailColumn = '$unsubscriber'";
+		
+		$unsubscribeResult = $wpdb->query($unsubscribeQuery);
+		
+		if ($unsubscribeResult === false) { // using identicality check as both 0 and false might be returned.
 			chimpme_log('error', "Database error. Unable to delete $unsubscriber.");
 		}
 
-		
 	} else {
 		chimpme_log('warn', "Unable to unsubscribe. $unsubscriber does not exist.");
 	}
 }
+
+/**
+ * Updates the corresponding information about a MailChimp subscriber in a database.
+ * 
+ * @param data
+ * 	An array of values that MailChimp sends in its webhook callback.
+ */
+function chimpme_update($data) {
+	
+	$subscriber = chimpme_getEmail($data);
+	chimpme_log('notice', "Updating $subscriber...");
+
+	// TODO check Pods for data on the subscriber.
+	$query = "SELECT * FROM $dbTableName
+		WHERE $dbEmailColumn = '$unsubscriber'";
+	$subscriber = $wpdb->get_row($query);
+
+	// TODO check the webhook payload for corresponding data (consider a map of each MC grouping to the associated Pods field).
+
+	// TODO overwrite the local subscriber with the MC one (assumes that the
+	// payload always sends the subscriber data in its entirety (as opposed to sending only changed data)).
+}
+
 
 /*
  * Helper method to retrieve the email from the POST data sent by the webhook.
@@ -108,6 +146,7 @@ function chimpme_getEmail($payload) {
 		$json = stripslashes($payload); // Undo any quotes from PHP or WP in the POST stub.
 
 		$payloadArray = json_decode($json, true);
+		chimpme_log('info', $payloadArray); // debug
 
 		$result = $payloadArray['email'];
 
@@ -117,6 +156,7 @@ function chimpme_getEmail($payload) {
 		$result = $payload[$emailKey];
 	}
 	
+	// TODO verify this is a valid email address, else flag an error.
 	return $result;
 }
 
@@ -191,7 +231,7 @@ function logRequest() {
 		$error = "Cannot open file $requestLog";
 
 		echo $error;
-		chimpme_log($error);
+		// chimpme_log('error', $error);
 
 	} else {
 
