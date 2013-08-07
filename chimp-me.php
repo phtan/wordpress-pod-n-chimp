@@ -14,6 +14,10 @@ require_once('/lib/KLogger.php');
 $dbTableName = "wp_pods_contact";
 $dbEmailColumn = "email";
 
+// Pods CMS parameters
+$podName = 'contact';
+$podEmailField = 'email';
+
 // MailChimp constants
 $webhookEventKey = 'type'; // key as in array key.
 $unsubscribeEvent = 'unsubscribe';
@@ -23,11 +27,13 @@ $payloadKey = 'data';
 $emailKey = 'email'; 
 
 // Constants for this plug-in.
+
 // ======== Ensure the below values are specified in the webhook callback URL passed to MailChimp =============
 // (The URL should look like http://send.callback.here/this-plugin.php?authenticateKey=authenticateValue)
 $authenticateKey = "key";
 $authenticateValue = "helloFromMailChimp";
 // ======================================== End authentication section ========================================
+
 $requestLog = "POST_request_log.csv";
 $logDirectory = dirname(__FILE__) . "/logs";
 $logger = KLogger::instance($logDirectory, KLogger::DEBUG);
@@ -36,8 +42,12 @@ $chimpme_usingStubs = true; // Set this to false if receiving webhooks from Mail
 $chimpe_stubType = 'update';
 
 // Main logic of this plug-in.
-if (isset($_POST[$authenticateKey]) &&
-		$_POST[$authenticateKey] == $authenticateValue) { // This is a callback from MailChimp.
+
+// TODO Un-comment the next 2 lines in production.
+// if (isset($_POST[$authenticateKey]) &&
+// 		$_POST[$authenticateKey] == $authenticateValue) { // This is a callback from MailChimp.
+
+if (!empty($_POST)) {
 
 	logRequest();
 
@@ -127,16 +137,17 @@ function chimpme_update($data) {
 	global $wpdb;
 	global $dbTableName, $dbEmailColumn;
 
-	$mailchimp_subscriber = chimpme_getEmail($data);
-	chimpme_log('notice', "Updating $mailchimp_subscriber...");
+	$mailchimp_subscriber_email = chimpme_getEmail($data);
+	chimpme_log('notice', "Updating $mailchimp_subscriber_email...");
 
 	$query = "SELECT * FROM $dbTableName
-		WHERE $dbEmailColumn = '$mailchimp_subscriber'";
+		WHERE $dbEmailColumn = '$mailchimp_subscriber_email'";
 	$local_subscriber = $wpdb->get_row($query);
 
 	if ($local_subscriber != null) { // TODO move this check (and the SQL above) into the future DAO class' update method.
 
-		$localData = getSubscriberDataFromPods($local_subscriber); // TODO Get a hash of the local data in Pods.
+		$localData = getSubscriberDataFromPods($mailchimp_subscriber_email); // TODO Get a hash of the local data in Pods.
+		chimpme_log('info', "Found the subscriber: ", $localData); // debug
 
 		// TODO check the webhook payload for corresponding data (consider a map of each MC grouping to the associated Pods field).
 
@@ -146,7 +157,7 @@ function chimpme_update($data) {
 		// TODO dump the hash back to Pods.
 
 	} else {
-		chimpme_log('warn', "Unable to update. $mailchimp_subscriber does not exist in the database table $dbTableName.");
+		chimpme_log('warn', "Unable to update. $mailchimp_subscriber_email does not exist in the database table $dbTableName.");
 	}
 	
 }
@@ -166,7 +177,7 @@ function chimpme_getEmail($payload) {
 		$json = stripslashes($payload); // Undo any quotes from PHP or WP in the POST stub.
 
 		$payloadArray = json_decode($json, true);
-		chimpme_log('info', "Received the POST request " . $payloadArray); // debug
+		chimpme_log('info', "Received POST request: ", $payloadArray); // debug.
 
 		$result = $payloadArray['email'];
 
@@ -183,9 +194,63 @@ function chimpme_getEmail($payload) {
 /*
  * Helper method to retrieve the existing data on the specified subscriber
  * from the Pods plug-in.
+ *
+ * @returns Array An associative array.
  */
 function getSubscriberDataFromPods($email) {
-	// TODO
+
+	// TODO check that the Pods plug-in exists here.
+
+	global $podName;
+
+	$data = array();
+
+	$subscribers = pods($podName);
+	$find_params = array(
+		'limit' => -1,
+		'where' => "email = '$email'"
+		);
+	$subscribers->find($find_params);
+
+	if ($subscribers->total() == 1) {
+		
+		$subscribers->fetch();
+
+		$value = "";
+		foreach($subscribers->fields as $field_key=>$field_values) {
+
+			// If this is a Relationship field...
+			if ($field_values['pick_object'] != "") {
+
+				 // .. Retrieve the value from the related pod.
+				$field_values = $subscribers->field($field_key . "." .
+					get_name_column_of_related_pod($field_key));
+
+				// Pods may store the value of the Relationship field as an
+				// array.
+				// TODO Read up on why Pods does so, so that the hack below
+				// can go away.
+				if (is_array($field_values)) {
+
+					foreach($field_values as $array_value) {
+						$value = $array_value; // TODO fix this so it doesn't only just keep the last value. Maybe by making $field_value an array as well.
+					}
+				}
+
+			} else {
+				// If not an Relationship, simply get the value from this pod.
+				$value = $subscribers->field($field_key);
+			}
+
+			$data[$field_key] = $value;
+		}
+	} elseif ($subscribers->total() > 1) {
+		chimpme_log('error', "Cannot update $email in the Pod $pods_name. Expected subscribers to be unique, but 1 or more subscriber records have the same email.");
+	} else {
+		chimpme_log('error', "Cannot update. Cannot find $email in the pod $pods_name.");
+	}
+
+	return $data;
 }
 
 /*
@@ -234,33 +299,58 @@ function logRequest() {
  * Helper method. Logs the specified message to a text file.
  * @param $message
  *		The message to log, of type string.
+ *      
  * @param $severity
  * 		The severity of the message, limited to "error", warn", "notice" and "info" for now.
+ * 
+ * @param $objectToPrint
+ * 		An optional argument. Prints the contents of the object.
  */
-function chimpme_log($severity, $message) {
+function chimpme_log($severity, $message, $objectToPrint = false) {
 	global $logger;
+
+	if(!$objectToPrint) {
+		$objectToPrint = KLogger::NO_ARGUMENTS;
+	}
 
 	switch ($severity) {
 	 	case 'error':
-	 		$logger->logError($message);
+	 		$logger->logError($message, $objectToPrint);
 	 		break;
 	 	
 	 	case 'warn':
-	 		$logger->logWarn($message);
+	 		$logger->logWarn($message, $objectToPrint);
 	 		break;
 
 	 	case 'notice':
-	 		$logger->logNotice($message);
+	 		$logger->logNotice($message, $objectToPrint);
 	 		break;
 
 	 	case 'info':
-	 		$logger->logInfo($message);
+	 		$logger->logInfo($message, $objectToPrint);
 	 		break;
 
 	 	default:
-	 		$logger->logInfo($message);
+	 		$logger->logInfo($message, $objectToPrint);
 	 		break;
 	 } 
+}
+
+// Method: get_name_column_of_related_pod
+// Accepts a name referring to an external pod, and returns the name
+// of the column in the pod that acts the most human-readable identifier.
+// ie. returns the name of the "name" column.
+//
+// This function also defined in the Pods page template also by me.
+function get_name_column_of_related_pod($local_name_for_pod) {
+	$column_name = 'name'; // General norm for tables created by the client.
+	
+	// Handle the conventions of specific tables.
+	if($local_name_for_pod == 'author') {
+		$column_name = 'display_name'; // With reference to the wp_users table.
+	}
+
+	return $column_name;
 }
 
 // ======================================
@@ -357,7 +447,7 @@ function fireUnsubRequest() {
  */
 function fireUpdateRequest() {
 
-	$unsubscriberEmail = 'user12@echoandhere.com';
+	$unsubscriberEmail = 'kna3@np.edu.sg';
 	$requestTarget = plugins_url(basename(__FILE__), __FILE__); // Post back to this file.
 
 	// Sample update callback:
