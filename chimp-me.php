@@ -28,6 +28,7 @@ $logDirectory = dirname(__FILE__) . "/logs";
 $logger = KLogger::instance($logDirectory, KLogger::DEBUG);
 
 $chimpme_usingStubs = true; // Set this to false if receiving webhooks from MailChimp (ie. when this plug-in is sent to production.)
+$chimpe_stubType = 'update';
 
 // Main logic of this plug-in.
 if (!empty($_POST)) { // TODO check instead for a key appended to the URL given to the mailchimp API.
@@ -39,12 +40,12 @@ if (!empty($_POST)) { // TODO check instead for a key appended to the URL given 
 		switch($_POST[$webhookEventKey]) {
 
 			case $unsubscribeEvent:
-				chimpme_unsubscribe($_POST['payloadKey']);
+				chimpme_unsubscribe($_POST[$payloadKey]);
 				chimpme_log('info', $_POST); // debug
 				break;
 
 			case $updateEvent:
-				chimpme_update($_POST['payloadKey']);
+				chimpme_update($_POST[$payloadKey]);
 				break;
 
 			default:
@@ -56,6 +57,7 @@ if (!empty($_POST)) { // TODO check instead for a key appended to the URL given 
 		// The 'type' key has no value.
 		// MailChimp's webhook might have changed.
 		// Do nothing for now.
+		
 		// TODO log something here.
 	}
 
@@ -116,18 +118,25 @@ function chimpme_unsubscribe($data) {
  */
 function chimpme_update($data) {
 	
-	$subscriber = chimpme_getEmail($data);
-	chimpme_log('notice', "Updating $subscriber...");
+	global $wpdb;
+	global $dbTableName, $dbEmailColumn;
+
+	$mailchimp_subscriber = chimpme_getEmail($data);
+	chimpme_log('notice', "Updating $mailchimp_subscriber...");
 
 	// TODO check Pods for data on the subscriber.
 	$query = "SELECT * FROM $dbTableName
-		WHERE $dbEmailColumn = '$unsubscriber'";
-	$subscriber = $wpdb->get_row($query);
+		WHERE $dbEmailColumn = '$mailchimp_subscriber'";
+	$local_subscriber = $wpdb->get_row($query);
+
+	// TODO Build a hash of local data in Pods.
 
 	// TODO check the webhook payload for corresponding data (consider a map of each MC grouping to the associated Pods field).
 
-	// TODO overwrite the local subscriber with the MC one (assumes that the
+	// TODO (in the hash) overwrite the local subscriber with the MC one (assumes that the
 	// payload always sends the subscriber data in its entirety (as opposed to sending only changed data)).
+	
+	// TODO dump the hash back to Pods.
 }
 
 
@@ -146,7 +155,7 @@ function chimpme_getEmail($payload) {
 		$json = stripslashes($payload); // Undo any quotes from PHP or WP in the POST stub.
 
 		$payloadArray = json_decode($json, true);
-		chimpme_log('info', $payloadArray); // debug
+		chimpme_log('info', "Received the POST request " . $payloadArray); // debug
 
 		$result = $payloadArray['email'];
 
@@ -165,7 +174,35 @@ function chimpme_getEmail($payload) {
  * at MailChimp.
  */
 function sendPostRequestStub() {
-	add_action('admin_footer', 'fireUnsubRequest'); // only works upon entering an admin page. (ie. WP Dashboard).
+	global $chimpe_stubType;
+
+	switch ($chimpe_stubType) {
+		
+		case 'unsubscribe':
+
+		// exhaustively remove other stubs hooked into WordPress.
+		remove_action('init', 'fireUpdateRequest');
+
+		// only works upon entering an admin page. (ie. WP Dashboard).
+		add_action('admin_footer', 'fireUnsubRequest');
+
+		break;
+
+
+		case 'update':
+
+		// exhaustively remove other similar stubs hooked into WordPress.
+		remove_action('init', 'fireUnsubRequest');
+
+		// only works upon entering an admin page. (ie. WP Dashboard).
+		add_action('admin_footer', 'fireUpdateRequest');
+		
+		break;
+
+		default:
+		remove_action('init', 'fireUpdateRequest');
+		add_action('admin_footer', 'fireUnsubRequest');
+	}
 }
 
 /*
@@ -181,7 +218,7 @@ function fireUnsubRequest() {
 	// type: unsubscribe
 	// fired_at: 2013-07-02 09:58:09
     // data: {"action"=>"unsub", "reason"=>"manual", "id"=>"8249032551", "email"=>"phtan90@gmail.com", "email_type"=>"html", "ip_opt"=>"137.132.202.66", "web_id"=>"17701457", "campaign_id"=>"6fb66e1caf", "merges"=>{"EMAIL"=>"phtan90@gmail.com", "FNAME"=>"PH", "LNAME"=>"at Gmail"}, "list_id"=>"b970dd90fa"}
-	echo "Sending POST stub...\n"; //debug
+	echo "Sending 'unsubscribe' POST stub...\n"; //debug
 
     $response = wp_remote_post( $requestTarget, array(
 		'method' => 'POST',
@@ -206,6 +243,63 @@ function fireUnsubRequest() {
     );
 
     
+
+    if( is_wp_error( $response ) ) {
+    	$error_message = $response->get_error_message();
+    	echo "Something went wrong: $error_message";
+    } else {
+    	echo 'Response: ';
+    	print_r( $response );
+    }
+
+}
+
+/*
+ * Simulates a POST request from an MailChimp update webhook.
+ */
+function fireUpdateRequest() {
+
+	$unsubscriberEmail = 'user12@echoandhere.com';
+	$requestTarget = plugins_url(basename(__FILE__), __FILE__); // Post back to this file.
+
+	// Sample update callback:
+	// 
+	// type: profile
+	// fired_at: 2013-07-30 03:27:31
+	// data: {"id"=>"7bb817e5dc", "email"=>"user7@echoandhere.com", "email_type"=>"html",
+	// 	"ip_opt"=>"137.132.119.222", "web_id"=>"24512937",
+	// 	"merges"=>{"EMAIL"=>"user7@echoandhere.com", "FNAME"=>"User 7", "LNAME"=>"From Echo And Here", "INTERESTS"=>"Sociology", "GROUPINGS"=>{"0"=>{"id"=>"2745", "name"=>"Research interest", "groups"=>"Sociology"}, "1"=>{"id"=>"2749", "name"=>"Gender", "groups"=>"Female"}}}, "list_id"=>"b970dd90fa"}
+	            
+
+	echo "Sending 'update' POST stub...\n"; //debug
+
+    $response = wp_remote_post( $requestTarget, array(
+		'method' => 'POST',
+		'timeout' => 45,
+		'redirection' => 5,
+		'httpversion' => '1.0',
+		'blocking' => true,
+		'headers' => array(),
+		'body' => array( 'type' => 'profile',
+			'fired_at' =>  date(DATE_ISO8601),
+			'data' => json_encode(
+				array(
+				"id"=>"7bb817e5dc", "email"=>"$unsubscriberEmail",
+				"email_type"=>"html", "ip_opt"=>"137.132.119.222", "web_id"=>"24512937",
+				"merges"=> array("EMAIL"=>$unsubscriberEmail,
+					"FNAME"=>"PH",
+					"LNAME"=>"at Gmail",
+					"INTERESTS"=>"Sociology",
+					"GROUPINGS"=> array("0"=>array("id"=>"2745",
+											"name"=>"Research interest",
+											"groups"=>"Sociology"),
+										"1"=>array("id"=>"2749",
+											"name"=>"Gender",
+											"groups"=>"Female"))),
+				"list_id"=>"b970dd90fa"))),
+		'cookies' => array()
+	    )
+    );
 
     if( is_wp_error( $response ) ) {
     	$error_message = $response->get_error_message();
