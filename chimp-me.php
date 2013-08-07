@@ -23,6 +23,11 @@ $payloadKey = 'data';
 $emailKey = 'email'; 
 
 // Constants for this plug-in.
+// ======== Ensure the below values are specified in the webhook callback URL passed to MailChimp =============
+// (The URL should look like http://send.callback.here/this-plugin.php?authenticateKey=authenticateValue)
+$authenticateKey = "key";
+$authenticateValue = "helloFromMailChimp";
+// ======================================== End authentication section ========================================
 $requestLog = "POST_request_log.csv";
 $logDirectory = dirname(__FILE__) . "/logs";
 $logger = KLogger::instance($logDirectory, KLogger::DEBUG);
@@ -31,7 +36,8 @@ $chimpme_usingStubs = true; // Set this to false if receiving webhooks from Mail
 $chimpe_stubType = 'update';
 
 // Main logic of this plug-in.
-if (!empty($_POST)) { // TODO check instead for a key appended to the URL given to the mailchimp API.
+if (isset($_POST[$authenticateKey]) &&
+		$_POST[$authenticateKey] == $authenticateValue) { // This is a callback from MailChimp.
 
 	logRequest();
 
@@ -61,7 +67,7 @@ if (!empty($_POST)) { // TODO check instead for a key appended to the URL given 
 		// TODO log something here.
 	}
 
-} else { // There hasn't been a POST request to this file.
+} elseif (empty($_POST)) { // There hasn't been a POST request to this file.
 
 	if ($chimpme_usingStubs) {
 		sendPostRequestStub();
@@ -90,7 +96,7 @@ function chimpme_unsubscribe($data) {
 		WHERE $dbEmailColumn = '$unsubscriber'";
 	$subscriber = $wpdb->get_row($query);
 
-	if ($subscriber != null) {
+	if ($subscriber != null) { // TODO move this check (and the SQL above) into the future DAO class' unsubscribe method.
 
 		$unsubscribeQuery = "UPDATE $dbTableName
 			SET $dbUnsubscribeColumn = '$dbUnsubscribeBit'
@@ -124,21 +130,26 @@ function chimpme_update($data) {
 	$mailchimp_subscriber = chimpme_getEmail($data);
 	chimpme_log('notice', "Updating $mailchimp_subscriber...");
 
-	// TODO check Pods for data on the subscriber.
 	$query = "SELECT * FROM $dbTableName
 		WHERE $dbEmailColumn = '$mailchimp_subscriber'";
 	$local_subscriber = $wpdb->get_row($query);
 
-	// TODO Build a hash of local data in Pods.
+	if ($local_subscriber != null) { // TODO move this check (and the SQL above) into the future DAO class' update method.
 
-	// TODO check the webhook payload for corresponding data (consider a map of each MC grouping to the associated Pods field).
+		$localData = getSubscriberDataFromPods($local_subscriber); // TODO Get a hash of the local data in Pods.
 
-	// TODO (in the hash) overwrite the local subscriber with the MC one (assumes that the
-	// payload always sends the subscriber data in its entirety (as opposed to sending only changed data)).
+		// TODO check the webhook payload for corresponding data (consider a map of each MC grouping to the associated Pods field).
+
+		// TODO (in the hash) overwrite the local subscriber with the MC one (assumes that the
+		// payload always sends the subscriber data in its entirety (as opposed to sending only changed data)).
+		
+		// TODO dump the hash back to Pods.
+
+	} else {
+		chimpme_log('warn', "Unable to update. $mailchimp_subscriber does not exist in the database table $dbTableName.");
+	}
 	
-	// TODO dump the hash back to Pods.
 }
-
 
 /*
  * Helper method to retrieve the email from the POST data sent by the webhook.
@@ -168,6 +179,93 @@ function chimpme_getEmail($payload) {
 	// TODO verify this is a valid email address, else flag an error.
 	return $result;
 }
+
+/*
+ * Helper method to retrieve the existing data on the specified subscriber
+ * from the Pods plug-in.
+ */
+function getSubscriberDataFromPods($email) {
+	// TODO
+}
+
+/*
+ * Helper method to inspect incoming POST requests.
+ * Deposits a CSV file in this plug-in directory.
+*/
+function logRequest() {
+
+	global $requestLog;
+	global $payloadKey;
+
+	if (!$file = fopen($requestLog, "w")) {
+
+		$error = "Cannot open file $requestLog";
+
+		echo $error;
+		// chimpme_log('error', $error);
+
+	} else {
+
+		foreach ($_POST as $key => $value) {
+
+			$keyValuePair = array($key, $value);
+			fputcsv($file, $keyValuePair);
+
+			if ($key = $payloadKey && is_array($value)) { // Check that this is a MailChimp payload.
+				fputcsv($file, array("(CHIMP-ME NOTICE)", "===== Printing contents of \"$payloadKey\" ====="));
+
+				foreach ($value as $k => $v) { // Print the inner array.
+					$pair = array($k, $v);
+					fputcsv($file, $pair);
+				}
+
+				fputcsv($file, array("(CHIMP-ME NOTICE)", "===== Printed \"$payloadKey\" ====="));
+			}
+		}
+
+		fclose($file);
+
+		
+		
+	}
+}
+
+/*
+ * Helper method. Logs the specified message to a text file.
+ * @param $message
+ *		The message to log, of type string.
+ * @param $severity
+ * 		The severity of the message, limited to "error", warn", "notice" and "info" for now.
+ */
+function chimpme_log($severity, $message) {
+	global $logger;
+
+	switch ($severity) {
+	 	case 'error':
+	 		$logger->logError($message);
+	 		break;
+	 	
+	 	case 'warn':
+	 		$logger->logWarn($message);
+	 		break;
+
+	 	case 'notice':
+	 		$logger->logNotice($message);
+	 		break;
+
+	 	case 'info':
+	 		$logger->logInfo($message);
+	 		break;
+
+	 	default:
+	 		$logger->logInfo($message);
+	 		break;
+	 } 
+}
+
+// ======================================
+// POST request stubs below
+// ======================================
 
 /*
  * Helper method to simulate a POST request fired by the webhook
@@ -309,81 +407,6 @@ function fireUpdateRequest() {
     	print_r( $response );
     }
 
-}
-
-/*
- * Helper method to inspect incoming POST requests.
- * Deposits a CSV file in this plug-in directory.
-*/
-function logRequest() {
-
-	global $requestLog;
-	global $payloadKey;
-
-	if (!$file = fopen($requestLog, "w")) {
-
-		$error = "Cannot open file $requestLog";
-
-		echo $error;
-		// chimpme_log('error', $error);
-
-	} else {
-
-		foreach ($_POST as $key => $value) {
-
-			$keyValuePair = array($key, $value);
-			fputcsv($file, $keyValuePair);
-
-			if ($key = $payloadKey && is_array($value)) { // Check that this is a MailChimp payload.
-				fputcsv($file, array("(CHIMP-ME NOTICE)", "===== Printing contents of \"$payloadKey\" ====="));
-
-				foreach ($value as $k => $v) { // Print the inner array.
-					$pair = array($k, $v);
-					fputcsv($file, $pair);
-				}
-
-				fputcsv($file, array("(CHIMP-ME NOTICE)", "===== Printed \"$payloadKey\" ====="));
-			}
-		}
-
-		fclose($file);
-
-		
-		
-	}
-}
-
-/*
- * Helper method. Logs the specified message to a text file.
- * @param $message
- *		The message to log, of type string.
- * @param $severity
- * 		The severity of the message, limited to "error", warn", "notice" and "info" for now.
- */
-function chimpme_log($severity, $message) {
-	global $logger;
-
-	switch ($severity) {
-	 	case 'error':
-	 		$logger->logError($message);
-	 		break;
-	 	
-	 	case 'warn':
-	 		$logger->logWarn($message);
-	 		break;
-
-	 	case 'notice':
-	 		$logger->logNotice($message);
-	 		break;
-
-	 	case 'info':
-	 		$logger->logInfo($message);
-	 		break;
-
-	 	default:
-	 		$logger->logInfo($message);
-	 		break;
-	 } 
 }
 
 ?>
