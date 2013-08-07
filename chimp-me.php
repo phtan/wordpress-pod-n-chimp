@@ -146,7 +146,7 @@ function chimpme_update($data) {
 
 	if ($local_subscriber != null) { // TODO move this check (and the SQL above) into the future DAO class' update method.
 
-		$localData = getSubscriberDataFromPods($mailchimp_subscriber_email); // TODO Get a hash of the local data in Pods.
+		$localData = getSubscriberDataFromPods($mailchimp_subscriber_email);
 		chimpme_log('info', "Found the subscriber: ", $localData); // debug
 
 		// TODO check the webhook payload for corresponding data (consider a map of each MC grouping to the associated Pods field).
