@@ -38,9 +38,10 @@ $authenticateValue = "helloFromMailChimp";
 $requestLog = "POST_request_log.csv";
 $logDirectory = dirname(__FILE__) . "/logs";
 $logger = KLogger::instance($logDirectory, KLogger::DEBUG);
+// $logger = KLogger::instance($logDirectory, KLogger::NOTICE); // Uncomment this line and comment out the above one, when in production.
 
-$chimpme_usingStubs = true; // Set this to false if receiving webhooks from MailChimp (ie. when this plug-in is sent to production.)
-$chimpe_stubType = 'update';
+$chimpme_usingStubs = false; // Set this to false if receiving webhooks from MailChimp (ie. when this plug-in is sent to production.)
+$chimpme_stubType = 'update';
 
 // Main logic of this plug-in.
 
@@ -162,7 +163,7 @@ function chimpme_update($data) {
 		$lastGroupName = key($localData);
 		reset($localData);
 
-		// Overwrite the local info on the subscriber with the MC one
+		// Overwrite the local info on the subscriber with the MC one.
 		// Assumes that the payload always sends the subscriber data in its
 		// entirety (as opposed to sending only changed data)).
 		foreach ($remoteFields as $remoteName => $remoteValue) {
@@ -268,7 +269,8 @@ function getSubscriberDataFromPods($email) {
 		
 		$subscribers->fetch();
 
-		$value = "";
+		$value = ""; // initialise.
+
 		foreach($subscribers->fields as $field_key=>$field_values) {
 
 			// If this is a Relationship field...
@@ -282,9 +284,14 @@ function getSubscriberDataFromPods($email) {
 				// array.
 				// TODO Read up on why Pods does so, so that the hack below
 				// can go away.
+				
+				$value = ""; // reset from any assignments from a previous
+							// loop iteration that entered the if statement below.
+
 				if (is_array($field_values)) {
 
-					foreach($field_values as $array_value) {
+					foreach($field_values as $key => $array_value) {
+						// chimpme_log('info', "Read in from Pods: {$field_key}[$key] = $array_value"); // debug
 						$value = $array_value; // TODO fix this so it doesn't only just keep the last value. Maybe by making $field_value an array as well.
 					}
 				}
@@ -320,6 +327,7 @@ function saveToPods($data) {
 	$success = false;
 
 	// TODO defensive code: check that the Pods plug-in exists here.
+
 	if (isset($data['email'])) {
 
 		$localSubscribers = pods($podName); // TODO This is a duplicate of the call in getSubscriberDataFromPods. To avoid dups, allow the Pod object persist in the future Pods model class.
@@ -331,8 +339,8 @@ function saveToPods($data) {
 
 		if ($localSubscribers->total() == 1) {
 
-			// Found within pods. Retrieve its id so that we have a handle
-			// to call Pods::save() on.
+			// ALready found within pods. Retrieve its id so that we have a handle
+			// to call update methods on.
 			$localSubscribers->fetch();
 			$id = $localSubscribers->field('id'); // TODO refactor magic string for the Pods 'id' key.
 
@@ -350,7 +358,7 @@ function saveToPods($data) {
 
 		} elseif ($subscribers->total() > 1) {
 			chimpme_log('error', "Cannot update " . $data['email'] . " in the Pod $pods_name. Expected subscribers to be unique, but 1 or more subscriber records have the same email.");
-		} else {
+		} else { 
 			chimpme_log('error', "Cannot update. Cannot find " . $data['email'] . " in the pod $pods_name.");
 		}
 
@@ -386,6 +394,9 @@ function logRequest() {
 			fputcsv($file, $keyValuePair);
 
 			if ($key = $payloadKey && is_array($value)) { // Check that this is a MailChimp payload.
+
+				chimpme_log('info', "Received POST request:", $_POST); // TODO keep either this or the CSV below.
+
 				fputcsv($file, array("(CHIMP-ME NOTICE)", "===== Printing contents of \"$payloadKey\" ====="));
 
 				foreach ($value as $k => $v) { // Print the inner array.
@@ -471,9 +482,9 @@ function get_name_column_of_related_pod($local_name_for_pod) {
  * at MailChimp.
  */
 function sendPostRequestStub() {
-	global $chimpe_stubType;
+	global $chimpme_stubType;
 
-	switch ($chimpe_stubType) {
+	switch ($chimpme_stubType) {
 		
 		case 'unsubscribe':
 
@@ -556,7 +567,7 @@ function fireUnsubRequest() {
  */
 function fireUpdateRequest() {
 
-	$unsubscriberEmail = 'kna3@np.edu.sg';
+	$unsubscriberEmail = 'user@tus.edu.sg';
 	$requestTarget = plugins_url(basename(__FILE__), __FILE__); // Post back to this file.
 
 	// Sample update callback:
@@ -589,7 +600,7 @@ function fireUpdateRequest() {
 					"INTERESTS"=>"Sociology",
 					"GROUPINGS"=> array("0"=>array("id"=>"2745",
 											"name"=>"countries_of_interest",
-											"groups"=>"this_place"),
+											"groups"=>"Singapore"),
 										"1"=>array("id"=>"2749",
 											"name"=>"Gender",
 											"groups"=>"Female"))),
