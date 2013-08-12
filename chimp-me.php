@@ -172,12 +172,21 @@ function chimpme_update($data) {
 
 				if ($localName == $remoteName) {
 					$localData[$localName] = $remoteValue;
+
+					// TODO check that $remoteValue is a valid PICK column value.
+					// (ie. exists in the foreign table.)
+					// Because if it isn't (eg. countries_of_interest = "random_place"
+					// instead of "India"), then Pods will set the PICK column
+					// value to NULL instead of the invalid value.
+
+					// TODO log a warning that the value will be set to NULL
+					// if the check in the above TODO fails.
+
 					chimpme_log('notice', "Updating '$localName' from '$localValue' to '$remoteValue'...");
 					break;
 				} elseif ($localName == $lastGroupName && $localName != $remoteName) {
+					
 					// we've scanned through all the local data. The remote group is new.
-
-					chimpme_log('info', "\$lastGroupName: $lastGroupName, \$remoteName: $remoteName, \$localName: $localName"); // debug.
 
 					// TODO Register the remote group as a new Pods field? To ask Alfred.
 					chimpme_log('notice', "Found a new field '$remoteName' in MailChimp data with the value '$remoteValue'. Discarding for now...");
@@ -192,6 +201,8 @@ function chimpme_update($data) {
 			chimpme_log('notice', "Updated.");
 			chimpme_log('info', "Subscriber is now:",
 				getSubscriberDataFromPods($mailchimp_subscriber_email));
+		} else {
+			chimpme_log('error', "Unable to  update. Cannot save to Pods.");
 		}
 
 	} else {
@@ -328,15 +339,16 @@ function saveToPods($data) {
 			$id = $localSubscribers->field('id'); // TODO refactor magic string for the Pods 'id' key.
 
 			$subscriber = pods($podName, $id);
+			$podsAPI = pods_api($podName);
 
 			// debug.
 			chimpme_log('info', "Beginning to save to the Pods item " . $subscriber->field('email') . " that has id " . $subscriber->field('id') . "..."); // debug
 			chimpme_log('info', "Saving this data into Pods:", $data);
-			$data['name'] = "This string should show up in Pods if its save method works.";
+			// end debug.
 
-			$subscriber->save($data); // TODO any way to check for success in Pods' save() method?
-
-			$success = true;
+			// Pods->save and PodsAPI->save_pod_item both don't update relationship
+			// columns, hence the workaround below. As of Pods v2.3.6.
+			$success = ($subscriber->delete() && $podsAPI->import($data)); // depends on PHP's short-circuit behaviour of the && operator.
 
 		} elseif ($subscribers->total() > 1) {
 			chimpme_log('error', "Cannot update " . $data['email'] . " in the Pod $pods_name. Expected subscribers to be unique, but 1 or more subscriber records have the same email.");
@@ -346,10 +358,6 @@ function saveToPods($data) {
 
 	} else {
 		chimpme_log('error', "Cannot save to Pods. There is no email to identify the subscriber with.");
-
-		// chimpme_log('warn', "Unable to update. Error saving to Pods.");
-		// chimpme_log('info', "Had attempted to save this data to Pods:", $localData);
-
 	}
 
 	return $success;
@@ -583,7 +591,7 @@ function fireUpdateRequest() {
 					"INTERESTS"=>"Sociology",
 					"GROUPINGS"=> array("0"=>array("id"=>"2745",
 											"name"=>"countries_of_interest",
-											"groups"=>"India"),
+											"groups"=>"this_place"),
 										"1"=>array("id"=>"2749",
 											"name"=>"Gender",
 											"groups"=>"Female"))),
