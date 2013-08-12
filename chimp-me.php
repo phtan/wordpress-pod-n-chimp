@@ -9,6 +9,7 @@ Author URI: https://plus.google.com/106730175494661681756
 
 require_once(dirname(dirname(dirname(dirname( __FILE__ )))) . '/wp-load.php' ); // TODO find a better way to locate wp-load.php as it might not always be in the WP root folder.
 require_once('/lib/KLogger.php');
+require_once('/lib/ChimpMeDictionary.php');
 
 // DB parameters
 $dbTableName = "wp_pods_contact";
@@ -49,7 +50,7 @@ $chimpe_stubType = 'update';
 
 if (!empty($_POST)) {
 
-	logRequest();
+	// logRequest();
 
 	if (isset($_POST[$webhookEventKey])) {
 
@@ -149,12 +150,49 @@ function chimpme_update($data) {
 		$localData = getSubscriberDataFromPods($mailchimp_subscriber_email);
 		chimpme_log('info', "Found the subscriber: ", $localData); // debug
 
-		// TODO check the webhook payload for corresponding data (consider a map of each MC grouping to the associated Pods field).
+		// TODO check the webhook payload for corresponding data
+		// (consider a map of each MC grouping to the associated Pods field).
+		try {
+			$remoteFields = ChimpMeDictionary::convertToPodsFields($data);
+		} catch (Exception $e) {
+			chimpme_log('error', $e->getMessage());
+			die();
+		}
+
+		// store last element of local data for reference later.
+		end($localData);
+		$lastGroupName = key($localData);
+		reset($localData);
 
 		// TODO (in the hash) overwrite the local subscriber with the MC one (assumes that the
 		// payload always sends the subscriber data in its entirety (as opposed to sending only changed data)).
-		
+		foreach ($remoteFields as $remoteName => $remoteValue) {
+
+			foreach ($localData as $localName => $localValue) {
+
+				if ($localName == $remoteName) {
+					$localData[$localName] = $remoteValue;
+					chimpme_log('notice', "Updating '$localName' from '$localValue' to '$remoteValue'...");
+					break;
+				} elseif ($localName == $lastGroupName && $localName != $remoteName) {
+					// we've scanned through all the local data. The remote group is new.
+
+					chimpme_log('info', "\$lastGroupName: $lastGroupName, \$remoteName: $remoteName, \$localName: $localName"); // debug.
+
+					// TODO Register the remote group as a new Pods field? To ask Alfred.
+					chimpme_log('notice', "Found a new field '$remoteName' in MailChimp data with the value '$remoteValue'. Discarding for now...");
+				}
+			}
+		}
+
 		// TODO dump the hash back to Pods.
+		$updateSuccess = saveToPods($localData);
+
+		if ($updateSuccess) {
+			chimpme_log('notice', "Updated.");
+			chimpme_log('info', "Subscriber is now:",
+				getSubscriberDataFromPods($mailchimp_subscriber_email));
+		}
 
 	} else {
 		chimpme_log('warn', "Unable to update. $mailchimp_subscriber_email does not exist in the database table $dbTableName.");
@@ -174,17 +212,22 @@ function chimpme_getEmail($payload) {
 	if ($chimpme_usingStubs) {
 		// The HTTP request is a stub from the fireUnsubRequest method.
 		// Receive the JSON payload.
-		$json = stripslashes($payload); // Undo any quotes from PHP or WP in the POST stub.
 
-		$payloadArray = json_decode($json, true);
-		chimpme_log('info', "Received POST request: ", $payloadArray); // debug.
+		// $json = stripslashes($payload); // Undo any quotes from PHP or WP in the POST stub.
 
-		$result = $payloadArray['email'];
+		// $payloadArray = json_decode($json, true);
+		// chimpme_log('info', "Received POST request: ", $payloadArray); // debug.
+
+		// $result = $payloadArray['email'];
+
+
+		// Above commented out to test update handler. 12 Aug 2013, 1.55pm.
+		$result = $payload[$emailKey];
 
 	} else {
 		// $payload should be an array containing data related to the
 		// MailChimp event. (eg. Unsubscribe).
-		$result = $payload[$emailKey];
+		$result = $payload[$emailKey];	
 	}
 	
 	// TODO verify this is a valid email address, else flag an error.
@@ -254,9 +297,69 @@ function getSubscriberDataFromPods($email) {
 }
 
 /*
+ * Helper method to save an array of fields to Pods' storage.
+ * 
+ * @param array
+ *	An associative array of data to overwrite to Pods.
+ *
+ * @return boolean
+ *	True on success.
+ */
+function saveToPods($data) {
+	
+	global $podName;
+	$success = false;
+
+	// TODO defensive code: check that the Pods plug-in exists here.
+	if (isset($data['email'])) {
+
+		$localSubscribers = pods($podName); // TODO This is a duplicate of the call in getSubscriberDataFromPods. To avoid dups, allow the Pod object persist in the future Pods model class.
+		$find_params = array(
+			'limit' => -1,
+			'where' => "email = '" . $data['email'] . "'"
+			);
+		$localSubscribers->find($find_params);
+
+		if ($localSubscribers->total() == 1) {
+
+			// Found within pods. Retrieve its id so that we have a handle
+			// to call Pods::save() on.
+			$localSubscribers->fetch();
+			$id = $localSubscribers->field('id'); // TODO refactor magic string for the Pods 'id' key.
+
+			$subscriber = pods($podName, $id);
+
+			// debug.
+			chimpme_log('info', "Beginning to save to the Pods item " . $subscriber->field('email') . " that has id " . $subscriber->field('id') . "..."); // debug
+			chimpme_log('info', "Saving this data into Pods:", $data);
+			$data['name'] = "This string should show up in Pods if its save method works.";
+
+			$subscriber->save($data); // TODO any way to check for success in Pods' save() method?
+
+			$success = true;
+
+		} elseif ($subscribers->total() > 1) {
+			chimpme_log('error', "Cannot update " . $data['email'] . " in the Pod $pods_name. Expected subscribers to be unique, but 1 or more subscriber records have the same email.");
+		} else {
+			chimpme_log('error', "Cannot update. Cannot find " . $data['email'] . " in the pod $pods_name.");
+		}
+
+	} else {
+		chimpme_log('error', "Cannot save to Pods. There is no email to identify the subscriber with.");
+
+		// chimpme_log('warn', "Unable to update. Error saving to Pods.");
+		// chimpme_log('info', "Had attempted to save this data to Pods:", $localData);
+
+	}
+
+	return $success;
+}
+
+
+/*
  * Helper method to inspect incoming POST requests.
  * Deposits a CSV file in this plug-in directory.
-*/
+ */
 function logRequest() {
 
 	global $requestLog;
@@ -470,7 +573,7 @@ function fireUpdateRequest() {
 		'headers' => array(),
 		'body' => array( 'type' => 'profile',
 			'fired_at' =>  date(DATE_ISO8601),
-			'data' => json_encode(
+			'data' => // json_encode(
 				array(
 				"id"=>"7bb817e5dc", "email"=>"$unsubscriberEmail",
 				"email_type"=>"html", "ip_opt"=>"137.132.119.222", "web_id"=>"24512937",
@@ -479,12 +582,14 @@ function fireUpdateRequest() {
 					"LNAME"=>"at Gmail",
 					"INTERESTS"=>"Sociology",
 					"GROUPINGS"=> array("0"=>array("id"=>"2745",
-											"name"=>"Research interest",
-											"groups"=>"Sociology"),
+											"name"=>"countries_of_interest",
+											"groups"=>"India"),
 										"1"=>array("id"=>"2749",
 											"name"=>"Gender",
 											"groups"=>"Female"))),
-				"list_id"=>"b970dd90fa"))),
+				"list_id"=>"b970dd90fa"))
+		// )
+    ,
 		'cookies' => array()
 	    )
     );
