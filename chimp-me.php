@@ -150,8 +150,6 @@ function chimpme_update($data) {
 		$localData = getSubscriberDataFromPods($mailchimp_subscriber_email);
 		chimpme_log('info', "Found the subscriber: ", $localData); // debug
 
-		// TODO check the webhook payload for corresponding data
-		// (consider a map of each MC grouping to the associated Pods field).
 		try {
 			$remoteFields = ChimpMeDictionary::convertToPodsFields($data);
 		} catch (Exception $e) {
@@ -164,8 +162,9 @@ function chimpme_update($data) {
 		$lastGroupName = key($localData);
 		reset($localData);
 
-		// TODO (in the hash) overwrite the local subscriber with the MC one (assumes that the
-		// payload always sends the subscriber data in its entirety (as opposed to sending only changed data)).
+		// Overwrite the local info on the subscriber with the MC one
+		// Assumes that the payload always sends the subscriber data in its
+		// entirety (as opposed to sending only changed data)).
 		foreach ($remoteFields as $remoteName => $remoteValue) {
 
 			foreach ($localData as $localName => $localValue) {
@@ -194,7 +193,6 @@ function chimpme_update($data) {
 			}
 		}
 
-		// TODO dump the hash back to Pods.
 		$updateSuccess = saveToPods($localData);
 
 		if ($updateSuccess) {
