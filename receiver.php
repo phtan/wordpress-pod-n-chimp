@@ -5,7 +5,7 @@ This file implements the synchronisation from MailChimp to Pods.
 It depends on MailChimp webhooks and the Pods API.
 
 Version: 0.1
-Author: Pheng Heong, Tan
+Author: Pheng Heong Tan
 Author URI: https://plus.google.com/106730175494661681756
 */
 
@@ -68,11 +68,6 @@ if (!empty($_POST)) {
 		// TODO log something here.
 	}
 
-} elseif (empty($_POST)) { // There hasn't been a POST request to this file.
-
-	if ($chimpme_usingStubs) {
-		sendPostRequestStub();
-	}
 }
 
 /*
@@ -91,7 +86,7 @@ function chimpme_unsubscribe($data) {
 	$dbUnsubscribeBit = 0;
 	// TODO use prepare statements in wpdb calls below.
 	
-	$unsubscriber = chimpme_getEmail($data);
+	$unsubscriber = chimpme_getEmail($data, $emailKey);
     pnc_log('notice', "Unsubscribing $unsubscriber...");
 
 	$query = "SELECT * FROM $dbTableName
@@ -418,206 +413,6 @@ function get_name_column_of_related_pod($local_name_for_pod) {
 	}
 
 	return $column_name;
-}
-
-// ======================================
-// POST request stubs below
-// ======================================
-
-/*
- * Helper method to simulate a POST request fired by the webhook
- * at MailChimp.
- */
-function sendPostRequestStub() {
-	global $chimpme_stubType;
-
-	switch ($chimpme_stubType) {
-		
-		case 'unsubscribe':
-
-		// exhaustively remove other stubs hooked into WordPress.
-		remove_action('init', 'fireUpdateRequest');
-		remove_action('init', 'fireUpemailRequest');
-
-		// only works upon entering an admin page. (ie. WP Dashboard).
-		add_action('admin_footer', 'fireUnsubRequest');
-
-		break;
-
-
-		case 'update':
-
-		// exhaustively remove other similar stubs hooked into WordPress.
-		remove_action('init', 'fireUnsubRequest');
-		remove_action('init', 'fireUpemailRequest');
-
-		// only works upon entering an admin page. (ie. WP Dashboard).
-		add_action('admin_footer', 'fireUpdateRequest');
-		
-		break;
-
-		case 'upemail':
-
-		remove_action('init', 'fireUpdateRequest');
-		remove_action('init', 'fireUnsubRequest');
-
-		add_action('admin_footer', 'fireUpemailRequest');
-
-		break;
-
-		default:
-		remove_action('init', 'fireUpdateRequest');
-		remove_action('init', 'fireUpemailRequest');
-		add_action('admin_footer', 'fireUnsubRequest');
-	}
-}
-
-/*
- * Simulates a POST request from an MailChimp unsubscribe webhook.
- */
-function fireUnsubRequest() {
-
-	$unsubscriberEmail = 'kna3@np.edu.sg';
-	$requestTarget = plugins_url(basename(__FILE__), __FILE__); // Post back to this file.
-
-	// Sample unsubscribe requestst:
-	// 
-	// type: unsubscribe
-	// fired_at: 2013-07-02 09:58:09
-    // data: {"action"=>"unsub", "reason"=>"manual", "id"=>"8249032551", "email"=>"phtan90@gmail.com", "email_type"=>"html", "ip_opt"=>"137.132.202.66", "web_id"=>"17701457", "campaign_id"=>"6fb66e1caf", "merges"=>{"EMAIL"=>"phtan90@gmail.com", "FNAME"=>"PH", "LNAME"=>"at Gmail"}, "list_id"=>"b970dd90fa"}
-	echo "Sending 'unsubscribe' POST stub...\n"; //debug
-
-    $response = wp_remote_post( $requestTarget, array(
-		'method' => 'POST',
-		'timeout' => 45,
-		'redirection' => 5,
-		'httpversion' => '1.0',
-		'blocking' => true,
-		'headers' => array(),
-		'body' => array( 'type' => 'unsubscribe',
-			'fired_at' =>  date(DATE_ISO8601),
-			'data' => array(
-				"action"=>"unsub", "reason"=>"manual",
-				"id"=>"8249032551", "email"=>$unsubscriberEmail,
-				"email_type"=>"html", "ip_opt"=>"137.132.202.66",
-				"web_id"=>"17701457", "campaign_id"=>"6fb66e1caf",
-				"merges"=> array("EMAIL"=>$unsubscriberEmail,
-					"FNAME"=>"PH", "LNAME"=>"at Gmail"),
-				"list_id"=>"b970dd90fa")),
-		'cookies' => array()
-	    )
-    );
-
-    if( is_wp_error( $response ) ) {
-    	$error_message = $response->get_error_message();
-    	echo "Something went wrong: $error_message";
-    } else {
-    	echo 'Response: ';
-    	print_r( $response );
-    }
-
-}
-
-/*
- * Simulates a POST request from an MailChimp update webhook.
- */
-function fireUpdateRequest() {
-
-	$unsubscriberEmail = 'user@tus.edu.sg';
-	$requestTarget = plugins_url(basename(__FILE__), __FILE__); // Post back to this file.
-
-	// Sample update callback:
-	// 
-	// type: profile
-	// fired_at: 2013-07-30 03:27:31
-	// data: {"id"=>"7bb817e5dc", "email"=>"user7@echoandhere.com", "email_type"=>"html",
-	// 	"ip_opt"=>"137.132.119.222", "web_id"=>"24512937",
-	// 	"merges"=>{"EMAIL"=>"user7@echoandhere.com", "FNAME"=>"User 7", "LNAME"=>"From Echo And Here", "INTERESTS"=>"Sociology", "GROUPINGS"=>{"0"=>{"id"=>"2745", "name"=>"Research interest", "groups"=>"Sociology"}, "1"=>{"id"=>"2749", "name"=>"Gender", "groups"=>"Female"}}}, "list_id"=>"b970dd90fa"}
-	            
-
-	echo "Sending 'update' POST stub...\n"; //debug
-
-    $response = wp_remote_post( $requestTarget, array(
-		'method' => 'POST',
-		'timeout' => 45,
-		'redirection' => 5,
-		'httpversion' => '1.0',
-		'blocking' => true,
-		'headers' => array(),
-		'body' => array( 'type' => 'profile',
-			'fired_at' =>  date(DATE_ISO8601),
-			'data' => array(
-				"id"=>"7bb817e5dc", "email"=>"$unsubscriberEmail",
-				"email_type"=>"html", "ip_opt"=>"137.132.119.222", "web_id"=>"24512937",
-				"merges"=> array("EMAIL"=>$unsubscriberEmail,
-					"FNAME"=>"PH",
-					"LNAME"=>"at Gmail",
-					"INTERESTS"=>"Sociology",
-					"GROUPINGS"=> array("0"=>array("id"=>"2745",
-											"name"=>"countries_of_interest",
-											"groups"=>"Singapore"),
-										"1"=>array("id"=>"2749",
-											"name"=>"Gender",
-											"groups"=>"Female"))),
-				"list_id"=>"b970dd90fa")),
-		'cookies' => array()
-	    )
-    );
-
-    if( is_wp_error( $response ) ) {
-    	$error_message = $response->get_error_message();
-    	echo "Something went wrong: $error_message";
-    } else {
-    	echo 'Response: ';
-    	print_r( $response );
-    }
-
-}
-
-/*
- * Simulates a POST request from an MailChimp upemail webhook.
- */
-function fireUpemailRequest() {
-
-	$oldEmail = 'THISISNEW@tus.edu.sg';
-	$newEmail = 'user@tus.edu.sg';
-	$requestTarget = plugins_url(basename(__FILE__), __FILE__); // Post back to this file.
-
-	// Sample upemail callback:
-	// 
-	// type: upemail
-	// fired_at: 2013-07-30 03:27:31
-	// data: {"new_id"=>"00e38dac18", "new_email"=>"user@tus.edu.sg",
-	// 	"old_email"=>"userWHATSTHEWEBHOOKTYPE@tus.edu.sg", "list_id"=>"b970dd90fa"}      
-
-	echo "Sending 'upemail' POST stub...\n"; //debug
-
-    $response = wp_remote_post( $requestTarget, array(
-		'method' => 'POST',
-		'timeout' => 45,
-		'redirection' => 5,
-		'httpversion' => '1.0',
-		'blocking' => true,
-		'headers' => array(),
-		'body' => array( 'type' => 'upemail',
-			'fired_at' =>  date(DATE_ISO8601),
-			'data' => array(
-				"new_id"=>"00e38dac18",
-				"new_email"=>$newEmail,
-				"old_email"=>$oldEmail,
-				"list_id"=>"b970dd90fa")),
-		'cookies' => array()
-	    )
-    );
-
-    if( is_wp_error( $response ) ) {
-    	$error_message = $response->get_error_message();
-    	echo "Something went wrong: $error_message";
-    } else {
-    	echo 'Response: ';
-    	print_r( $response );
-    }
-
 }
 
 ?>
