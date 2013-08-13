@@ -38,13 +38,21 @@ $authenticateKey = "key";
 $authenticateValue = "helloFromMailChimp";
 // ======================================== End authentication section ========================================
 
-$chimpme_debug = true; // set to false when in production to removes verbose logs.
-
+// Logging
 $logDirectory = dirname(__FILE__) . "/logs";
 $requestLogDirectory = $logDirectory . '/requests';
 $logger;
 $requestLogger;
 
+// Debugging
+$chimpme_debug = true; // set to false in production to remove verbose logs.
+$chimpme_usingStubs = false; // Set this to false if receiving webhooks from MailChimp (ie. when this plug-in is sent to production.)
+$chimpme_stubType = 'upemail';
+
+// Miscellaneous
+$upemailBuffer = 1000000; // Number of micro-seconds to wait for 'upemail' handler to finish.
+
+// Declare loggers.
 if ($chimpme_debug) {
 
 	$logger = KLogger::instance($logDirectory, KLogger::DEBUG);
@@ -55,8 +63,6 @@ if ($chimpme_debug) {
 	$logger = KLogger::instance($logDirectory, KLogger::NOTICE);
 }
 
-$chimpme_usingStubs = false; // Set this to false if receiving webhooks from MailChimp (ie. when this plug-in is sent to production.)
-$chimpme_stubType = 'upemail';
 
 // ==============================
 // Main logic of this plug-in.
@@ -165,6 +171,9 @@ function chimpme_update($data) {
 	global $dbTableName, $dbEmailColumn;
 	global $emailKey;
 
+	global $upemailBuffer;
+	usleep($upemailBuffer); // TODO replace this with a queue system that checks that the upemail has indeed finished.
+
 	$mailchimp_subscriber_email = chimpme_getEmail($data, $emailKey);
 	chimpme_log('notice', "Updating $mailchimp_subscriber_email...");
 
@@ -266,7 +275,7 @@ function chimpme_changeEmail($data) {
 		if ($changeEmailResult === false) { // using identicality check as both 0 and false might be returned.
 			chimpme_log('error', "Error in querying the database. Cannot set $subscriber to the new email $newEmail.");
 		} else {
-			chimpme_log('notice', "Updated. Set old email $subscriber to email $newEmail.");
+			chimpme_log('notice', "Updated. Set old email \"$subscriber\" to new email \"$newEmail\".");
 		}
 
 	} else {
