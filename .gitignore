@@ -2,3 +2,4 @@
 logs/*
 lib/log*
 KLogger/*
+*log_*.txt

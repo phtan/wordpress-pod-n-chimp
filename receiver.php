@@ -1,36 +1,13 @@
 <?php
+
 /*
-Plugin Name: ChimpMe
-Description: A WordPress plug-in that acts on Webhook events raised by a MailChimp mailing list. 
+This file implements the synchronisation from MailChimp to Pods.
+It depends on MailChimp webhooks and the Pods API.
+
 Version: 0.1
 Author: Pheng Heong, Tan
 Author URI: https://plus.google.com/106730175494661681756
 */
-
-require_once(dirname(dirname(dirname(dirname( __FILE__ )))) . '/wp-load.php' ); // TODO find a better way to locate wp-load.php as it might not always be in the WP root folder.
-require_once('/lib/KLogger.php');
-require_once('/lib/ChimpMeDictionary.php');
-
-// DB parameters
-$dbTableName = "wp_pods_contact";
-$dbEmailColumn = "email";
-
-// Pods CMS parameters
-$podName = 'contact';
-$podEmailField = 'email';
-
-// MailChimp constants
-$webhookEventKey = 'type'; // key as in array key.
-$unsubscribeEvent = 'unsubscribe';
-$updateEvent = 'profile';
-$emailChangeEvent = 'upemail';
-
-$payloadKey = 'data'; 
-$emailKey = 'email'; 
-$oldEmailKey = 'old_email';
-$newEmailKey = 'new_email';
-
-// Constants for this plug-in.
 
 // ======== Ensure the below values are specified in the webhook callback URL passed to MailChimp =============
 // (The URL should look like http://send.callback.here/this-plugin.php?authenticateKey=authenticateValue)
@@ -38,30 +15,14 @@ $authenticateKey = "key";
 $authenticateValue = "helloFromMailChimp";
 // ======================================== End authentication section ========================================
 
-// Logging
-$logDirectory = dirname(__FILE__) . "/logs";
-$requestLogDirectory = $logDirectory . '/requests';
-$logger;
-$requestLogger;
+require_once(dirname(dirname(dirname(dirname( __FILE__ )))) . '/wp-load.php' ); // TODO find a better way to locate wp-load.php as it might not always be in the WP root folder.
+require_once('config.php');
+require_once('/helpers/PCLogger.php');
+require_once('/helpers/PCDictionary.php');
 
-// Debugging
-$chimpme_debug = true; // set to false in production to remove verbose logs.
-$chimpme_usingStubs = false; // Set this to false if receiving webhooks from MailChimp (ie. when this plug-in is sent to production.)
-$chimpme_stubType = 'upemail';
+// Constants for this file.
 
-// Miscellaneous
 $upemailBuffer = 1000000; // Number of micro-seconds to wait for 'upemail' handler to finish.
-
-// Declare loggers.
-if ($chimpme_debug) {
-
-	$logger = KLogger::instance($logDirectory, KLogger::DEBUG);
-	$requestLogger = KLogger::instance($requestLogDirectory, KLogger::DEBUG);
-
-} else {
-
-	$logger = KLogger::instance($logDirectory, KLogger::NOTICE);
-}
 
 
 // ==============================
@@ -95,7 +56,7 @@ if (!empty($_POST)) {
 				break;
 
 			default:
-				chimpme_log('error', "ChimpMe: Unknown action requested by webhook: "
+				pnc_log('error', "ChimpMe: Unknown action requested by webhook: "
 					. $_POST['type']);
 		}
 	
@@ -131,7 +92,7 @@ function chimpme_unsubscribe($data) {
 	// TODO use prepare statements in wpdb calls below.
 	
 	$unsubscriber = chimpme_getEmail($data);
-    chimpme_log('notice', "Unsubscribing $unsubscriber...");
+    pnc_log('notice', "Unsubscribing $unsubscriber...");
 
 	$query = "SELECT * FROM $dbTableName
 		WHERE $dbEmailColumn = '$unsubscriber'";
@@ -149,13 +110,13 @@ function chimpme_unsubscribe($data) {
 		$unsubscribeResult = $wpdb->query($unsubscribeQuery);
 		
 		if ($unsubscribeResult === false) { // using identicality check as both 0 and false might be returned.
-			chimpme_log('error', "Database error. Unable to delete $unsubscriber.");
+			pnc_log('error', "Database error. Unable to delete $unsubscriber.");
 		} else {
-			chimpme_log('notice', "$unsubscriber has been unsubscribed.");
+			pnc_log('notice', "$unsubscriber has been unsubscribed.");
 		}
 
 	} else {
-		chimpme_log('warn', "Unable to unsubscribe. $unsubscriber does not exist.");
+		pnc_log('warn', "Unable to unsubscribe. $unsubscriber does not exist.");
 	}
 }
 
@@ -175,7 +136,7 @@ function chimpme_update($data) {
 	usleep($upemailBuffer); // TODO replace this with a queue system that checks that the upemail has indeed finished.
 
 	$mailchimp_subscriber_email = chimpme_getEmail($data, $emailKey);
-	chimpme_log('notice', "Updating $mailchimp_subscriber_email...");
+	pnc_log('notice', "Updating $mailchimp_subscriber_email...");
 
 	$query = "SELECT * FROM $dbTableName
 		WHERE $dbEmailColumn = '$mailchimp_subscriber_email'";
@@ -184,12 +145,12 @@ function chimpme_update($data) {
 	if ($local_subscriber != null) { // TODO move this check (and the SQL above) into the future DAO class' update method.
 
 		$localData = getSubscriberDataFromPods($mailchimp_subscriber_email);
-		chimpme_log('info', "Found the subscriber: ", $localData); // debug
+		pnc_log('info', "Found the subscriber: ", $localData); // debug
 
 		try {
-			$remoteFields = ChimpMeDictionary::convertToPodsFields($data);
+			$remoteFields = PCDictionary::convertToPodsFields($data);
 		} catch (Exception $e) {
-			chimpme_log('error', $e->getMessage());
+			pnc_log('error', $e->getMessage());
 			die();
 		}
 
@@ -217,14 +178,14 @@ function chimpme_update($data) {
 					// TODO log a warning that the value will be set to NULL
 					// if the check in the above TODO fails.
 
-					chimpme_log('notice', "Updating '$localName' from '$localValue' to '$remoteValue'...");
+					pnc_log('notice', "Updating '$localName' from '$localValue' to '$remoteValue'...");
 					break;
 				} elseif ($localName == $lastGroupName && $localName != $remoteName) {
 					
 					// we've scanned through all the local data. The remote group is new.
 
 					// TODO Register the remote group as a new Pods field? To ask Alfred.
-					chimpme_log('notice', "Found a new field '$remoteName' in MailChimp data with the value '$remoteValue'. Discarding for now...");
+					pnc_log('notice', "Found a new field '$remoteName' in MailChimp data with the value '$remoteValue'. Discarding for now...");
 				}
 			}
 		}
@@ -232,15 +193,15 @@ function chimpme_update($data) {
 		$updateSuccess = saveToPods($localData);
 
 		if ($updateSuccess) {
-			chimpme_log('notice', "Updated $mailchimp_subscriber_email.");
-			chimpme_log('info', "Subscriber is now:",
+			pnc_log('notice', "Updated $mailchimp_subscriber_email.");
+			pnc_log('info', "Subscriber is now:",
 				getSubscriberDataFromPods($mailchimp_subscriber_email));
 		} else {
-			chimpme_log('error', "Unable to  update. Cannot save to Pods.");
+			pnc_log('error', "Unable to  update. Cannot save to Pods.");
 		}
 
 	} else {
-		chimpme_log('warn', "Unable to update. $mailchimp_subscriber_email does not exist in the database table $dbTableName.");
+		pnc_log('warn', "Unable to update. $mailchimp_subscriber_email does not exist in the database table $dbTableName.");
 	}	
 }
 
@@ -258,7 +219,7 @@ function chimpme_changeEmail($data) {
 
 	$subscriber = chimpme_getEmail($data, $oldEmailKey);
 	$newEmail = chimpme_getEmail($data, $newEmailKey);
-    chimpme_log('notice', "Updating email address for $subscriber...");
+    pnc_log('notice', "Updating email address for $subscriber...");
 
 	$query = "SELECT * FROM $dbTableName
 		WHERE $dbEmailColumn = '$subscriber'";
@@ -273,13 +234,13 @@ function chimpme_changeEmail($data) {
 		$changeEmailResult = $wpdb->query($changeEmailQuery);
 		
 		if ($changeEmailResult === false) { // using identicality check as both 0 and false might be returned.
-			chimpme_log('error', "Error in querying the database. Cannot set $subscriber to the new email $newEmail.");
+			pnc_log('error', "Error in querying the database. Cannot set $subscriber to the new email $newEmail.");
 		} else {
-			chimpme_log('notice', "Updated. Set old email \"$subscriber\" to new email \"$newEmail\".");
+			pnc_log('notice', "Updated. Set old email \"$subscriber\" to new email \"$newEmail\".");
 		}
 
 	} else {
-		chimpme_log('warn', "Unable to set the subscriber $subscriber to the new email $newEmail. S/he does not exist in the database.");
+		pnc_log('warn', "Cannot update $subscriber. (to the email $newEmail). S/he does not exist in the database.");
 	}
 }
 
@@ -350,7 +311,7 @@ function getSubscriberDataFromPods($email) {
 				if (is_array($field_values)) {
 
 					foreach($field_values as $key => $array_value) {
-						// chimpme_log('info', "Read in from Pods: {$field_key}[$key] = $array_value"); // debug
+						// pnc_log('info', "Read in from Pods: {$field_key}[$key] = $array_value"); // debug
 						$value = $array_value; // TODO fix this so it doesn't only just keep the last value. Maybe by making $field_value an array as well.
 					}
 				}
@@ -363,9 +324,9 @@ function getSubscriberDataFromPods($email) {
 			$data[$field_key] = $value;
 		}
 	} elseif ($subscribers->total() > 1) {
-		chimpme_log('error', "Cannot update $email in the Pod $pods_name. Expected subscribers to be unique, but 1 or more subscriber records have the same email.");
+		pnc_log('error', "Cannot update $email in the Pod $pods_name. Expected subscribers to be unique, but 1 or more subscriber records have the same email.");
 	} else {
-		chimpme_log('error', "Cannot update. Cannot find $email in the pod $pods_name.");
+		pnc_log('error', "Cannot update. Cannot find $email in the pod $pods_name.");
 	}
 
 	return $data;
@@ -407,8 +368,8 @@ function saveToPods($data) {
 			$podsAPI = pods_api($podName);
 
 			// debug.
-			chimpme_log('info', "Beginning to save to the Pods item " . $subscriber->field('email') . " that has id " . $subscriber->field('id') . "..."); // debug
-			chimpme_log('info', "Saving this data into Pods:", $data);
+			pnc_log('info', "Beginning to save to the Pods item " . $subscriber->field('email') . " that has id " . $subscriber->field('id') . "..."); // debug
+			pnc_log('info', "Saving this data into Pods:", $data);
 			// end debug.
 
 			// Pods->save and PodsAPI->save_pod_item both don't update relationship
@@ -416,13 +377,13 @@ function saveToPods($data) {
 			$success = ($subscriber->delete() && $podsAPI->import($data)); // depends on PHP's short-circuit behaviour of the && operator.
 
 		} elseif ($subscribers->total() > 1) {
-			chimpme_log('error', "Cannot update " . $data['email'] . " in the Pod $pods_name. Expected subscribers to be unique, but 1 or more subscriber records have the same email.");
+			pnc_log('error', "Cannot update " . $data['email'] . " in the Pod $pods_name. Expected subscribers to be unique, but 1 or more subscriber records have the same email.");
 		} else { 
-			chimpme_log('error', "Cannot update. Cannot find " . $data['email'] . " in the pod $pods_name.");
+			pnc_log('error', "Cannot update. Cannot find " . $data['email'] . " in the pod $pods_name.");
 		}
 
 	} else {
-		chimpme_log('error', "Cannot save to Pods. There is no email to identify the subscriber with.");
+		pnc_log('error', "Cannot save to Pods. There is no email to identify the subscriber with.");
 	}
 
 	return $success;
@@ -441,46 +402,6 @@ function logRequest() {
 
 }
 
-/*
- * Helper method. Logs the specified message to a text file.
- * @param $message
- *		The message to log, of type string.
- *      
- * @param $severity
- * 		The severity of the message, limited to "error", warn", "notice" and "info" for now.
- * 
- * @param $objectToPrint
- * 		An optional argument. Prints the contents of the object.
- */
-function chimpme_log($severity, $message, $objectToPrint = false) {
-	global $logger;
-
-	if(!$objectToPrint) {
-		$objectToPrint = KLogger::NO_ARGUMENTS;
-	}
-
-	switch ($severity) {
-	 	case 'error':
-	 		$logger->logError($message, $objectToPrint);
-	 		break;
-	 	
-	 	case 'warn':
-	 		$logger->logWarn($message, $objectToPrint);
-	 		break;
-
-	 	case 'notice':
-	 		$logger->logNotice($message, $objectToPrint);
-	 		break;
-
-	 	case 'info':
-	 		$logger->logInfo($message, $objectToPrint);
-	 		break;
-
-	 	default:
-	 		$logger->logInfo($message, $objectToPrint);
-	 		break;
-	 } 
-}
 
 // Method: get_name_column_of_related_pod
 // Accepts a name referring to an external pod, and returns the name
