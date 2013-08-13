@@ -23,9 +23,12 @@ $podEmailField = 'email';
 $webhookEventKey = 'type'; // key as in array key.
 $unsubscribeEvent = 'unsubscribe';
 $updateEvent = 'profile';
+$emailChangeEvent = 'upemail';
 
 $payloadKey = 'data'; 
 $emailKey = 'email'; 
+$oldEmailKey = 'old_email';
+$newEmailKey = 'new_email';
 
 // Constants for this plug-in.
 
@@ -35,24 +38,35 @@ $authenticateKey = "key";
 $authenticateValue = "helloFromMailChimp";
 // ======================================== End authentication section ========================================
 
-$chimpme_debug = true; // set to false when in production to removes verbose logs.
-
+// Logging
 $logDirectory = dirname(__FILE__) . "/logs";
 $requestLogDirectory = $logDirectory . '/requests';
 $logger;
 $requestLogger;
 
+// Debugging
+$chimpme_debug = true; // set to false in production to remove verbose logs.
+$chimpme_usingStubs = false; // Set this to false if receiving webhooks from MailChimp (ie. when this plug-in is sent to production.)
+$chimpme_stubType = 'upemail';
+
+// Miscellaneous
+$upemailBuffer = 1000000; // Number of micro-seconds to wait for 'upemail' handler to finish.
+
+// Declare loggers.
 if ($chimpme_debug) {
+
 	$logger = KLogger::instance($logDirectory, KLogger::DEBUG);
 	$requestLogger = KLogger::instance($requestLogDirectory, KLogger::DEBUG);
+
 } else {
+
 	$logger = KLogger::instance($logDirectory, KLogger::NOTICE);
 }
 
-$chimpme_usingStubs = true; // Set this to false if receiving webhooks from MailChimp (ie. when this plug-in is sent to production.)
-$chimpme_stubType = 'unsubscribe';
 
+// ==============================
 // Main logic of this plug-in.
+// ==============================
 
 // TODO Un-comment the next 2 lines in production.
 // if (isset($_POST[$authenticateKey]) &&
@@ -74,6 +88,10 @@ if (!empty($_POST)) {
 
 			case $updateEvent:
 				chimpme_update($_POST[$payloadKey]);
+				break;
+
+			case $emailChangeEvent:
+				chimpme_changeEmail($_POST[$payloadKey]);
 				break;
 
 			default:
@@ -106,6 +124,7 @@ function chimpme_unsubscribe($data) {
 
 	global $wpdb;
 	global $dbTableName, $dbEmailColumn;
+	global $emailKey;
 
 	$dbUnsubscribeColumn = "newsletter";
 	$dbUnsubscribeBit = 0;
@@ -150,8 +169,12 @@ function chimpme_update($data) {
 	
 	global $wpdb;
 	global $dbTableName, $dbEmailColumn;
+	global $emailKey;
 
-	$mailchimp_subscriber_email = chimpme_getEmail($data);
+	global $upemailBuffer;
+	usleep($upemailBuffer); // TODO replace this with a queue system that checks that the upemail has indeed finished.
+
+	$mailchimp_subscriber_email = chimpme_getEmail($data, $emailKey);
 	chimpme_log('notice', "Updating $mailchimp_subscriber_email...");
 
 	$query = "SELECT * FROM $dbTableName
@@ -218,24 +241,65 @@ function chimpme_update($data) {
 
 	} else {
 		chimpme_log('warn', "Unable to update. $mailchimp_subscriber_email does not exist in the database table $dbTableName.");
+	}	
+}
+
+/*
+ * This method changes the email of an unsubscriber in an user-maintained
+ * database.
+ * @param data
+ * 	An array of values that MailChimp sends in its webhook callback.
+ */
+function chimpme_changeEmail($data) {
+
+	global $wpdb;
+	global $dbTableName, $dbEmailColumn;
+	global $oldEmailKey, $newEmailKey;
+
+	$subscriber = chimpme_getEmail($data, $oldEmailKey);
+	$newEmail = chimpme_getEmail($data, $newEmailKey);
+    chimpme_log('notice', "Updating email address for $subscriber...");
+
+	$query = "SELECT * FROM $dbTableName
+		WHERE $dbEmailColumn = '$subscriber'";
+	$subscriberInDB = $wpdb->get_row($query);
+
+	if ($subscriberInDB != null) {
+
+		$changeEmailQuery = "UPDATE $dbTableName
+			SET $dbEmailColumn = '$newEmail'
+			WHERE $dbEmailColumn = '$subscriber'";
+
+		$changeEmailResult = $wpdb->query($changeEmailQuery);
+		
+		if ($changeEmailResult === false) { // using identicality check as both 0 and false might be returned.
+			chimpme_log('error', "Error in querying the database. Cannot set $subscriber to the new email $newEmail.");
+		} else {
+			chimpme_log('notice', "Updated. Set old email \"$subscriber\" to new email \"$newEmail\".");
+		}
+
+	} else {
+		chimpme_log('warn', "Unable to set the subscriber $subscriber to the new email $newEmail. S/he does not exist in the database.");
 	}
-	
 }
 
 /*
  * Helper method to retrieve the email from the POST data sent by the webhook.
+ *
+ * @param $payload
+ * 	An array containing data related to the MailChimp event. (eg. Unsubscribe).
+ *
+ * @param $emailKey
+ * 	The key that points to the email address in $payload.
  */
-function chimpme_getEmail($payload) {
+function chimpme_getEmail($payload, $emailKey) {
 
 	$result = "";
-	global $chimpme_usingStubs;
-	global $payloadKey, $emailKey;
 
-	// $payload should be an array containing data related to the
-	// MailChimp event. (eg. Unsubscribe).
 	$result = $payload[$emailKey];	
 	
 	// TODO verify this is a valid email address, else flag an error.
+
 	return $result;
 }
 
@@ -452,6 +516,7 @@ function sendPostRequestStub() {
 
 		// exhaustively remove other stubs hooked into WordPress.
 		remove_action('init', 'fireUpdateRequest');
+		remove_action('init', 'fireUpemailRequest');
 
 		// only works upon entering an admin page. (ie. WP Dashboard).
 		add_action('admin_footer', 'fireUnsubRequest');
@@ -463,14 +528,25 @@ function sendPostRequestStub() {
 
 		// exhaustively remove other similar stubs hooked into WordPress.
 		remove_action('init', 'fireUnsubRequest');
+		remove_action('init', 'fireUpemailRequest');
 
 		// only works upon entering an admin page. (ie. WP Dashboard).
 		add_action('admin_footer', 'fireUpdateRequest');
 		
 		break;
 
+		case 'upemail':
+
+		remove_action('init', 'fireUpdateRequest');
+		remove_action('init', 'fireUnsubRequest');
+
+		add_action('admin_footer', 'fireUpemailRequest');
+
+		break;
+
 		default:
 		remove_action('init', 'fireUpdateRequest');
+		remove_action('init', 'fireUpemailRequest');
 		add_action('admin_footer', 'fireUnsubRequest');
 	}
 }
@@ -510,8 +586,6 @@ function fireUnsubRequest() {
 		'cookies' => array()
 	    )
     );
-
-    
 
     if( is_wp_error( $response ) ) {
     	$error_message = $response->get_error_message();
@@ -564,6 +638,52 @@ function fireUpdateRequest() {
 										"1"=>array("id"=>"2749",
 											"name"=>"Gender",
 											"groups"=>"Female"))),
+				"list_id"=>"b970dd90fa")),
+		'cookies' => array()
+	    )
+    );
+
+    if( is_wp_error( $response ) ) {
+    	$error_message = $response->get_error_message();
+    	echo "Something went wrong: $error_message";
+    } else {
+    	echo 'Response: ';
+    	print_r( $response );
+    }
+
+}
+
+/*
+ * Simulates a POST request from an MailChimp upemail webhook.
+ */
+function fireUpemailRequest() {
+
+	$oldEmail = 'THISISNEW@tus.edu.sg';
+	$newEmail = 'user@tus.edu.sg';
+	$requestTarget = plugins_url(basename(__FILE__), __FILE__); // Post back to this file.
+
+	// Sample upemail callback:
+	// 
+	// type: upemail
+	// fired_at: 2013-07-30 03:27:31
+	// data: {"new_id"=>"00e38dac18", "new_email"=>"user@tus.edu.sg",
+	// 	"old_email"=>"userWHATSTHEWEBHOOKTYPE@tus.edu.sg", "list_id"=>"b970dd90fa"}      
+
+	echo "Sending 'upemail' POST stub...\n"; //debug
+
+    $response = wp_remote_post( $requestTarget, array(
+		'method' => 'POST',
+		'timeout' => 45,
+		'redirection' => 5,
+		'httpversion' => '1.0',
+		'blocking' => true,
+		'headers' => array(),
+		'body' => array( 'type' => 'upemail',
+			'fired_at' =>  date(DATE_ISO8601),
+			'data' => array(
+				"new_id"=>"00e38dac18",
+				"new_email"=>$newEmail,
+				"old_email"=>$oldEmail,
 				"list_id"=>"b970dd90fa")),
 		'cookies' => array()
 	    )
