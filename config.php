@@ -13,6 +13,8 @@ $podName = 'contact';
 $podEmailField = 'email';
 
 // MailChimp constants
+// $pnc_mailChimpListId = 'YOUR-LIST-ID-HERE'; // Un-comment this line and delete the line below.
+$pnc_mailChimpListId = 'b970dd90fa';
 $webhookEventKey = 'type'; // key as in array key.
 $unsubscribeEvent = 'unsubscribe';
 $updateEvent = 'profile';

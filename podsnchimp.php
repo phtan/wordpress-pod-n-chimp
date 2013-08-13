@@ -14,41 +14,82 @@ if (!defined('ABSPATH')) {
 	exit();
 }
 
-register_activation_hook(__FILE__, array('PodsNChimp', 'setUp'));
-register_uninstall_hook(__FILE__, array('PodsNChimp', 'tearDown'));
-
-add_action('plugins_loaded,' array('PodsNChimp', 'getInstance'));
+require_once('config.php');
+require_once('/helpers/PCLogger.php');
 
 class PodsNChimp {
 
 	private static $instance;
 
 	private function __construct() {
-		// TODO
-		// add_filter(...)
+		
+		global $podName;
+
+		$postSaveFilter = 'pods_api_post_save_pod_item_' . $podName;
+		$saveFunctionArguments = 2;
+		$postDeleteFilter = 'pods_api_post_delete_pod_item_' . $podName;
+		$deleteFunctionArguments = 2;
+		$filterFunctionPriority = 10; // Lower numbers mean earlier execution by WordPress.
+
+		add_filter($postSaveFilter, array($this, 'updateToMailChimp'), $filterFunctionPriority, $saveFunctionArguments);
+		add_filter($postDeleteFilter, array($this, 'deleteFromMailChimp'), $filterFunctionPriority, $deleteFunctionArguments);
+
+		// TODO add filters for pods other than contacts. Eg. countries_of_interest
 	}
 
-
-	// Implements singleton pattern in case this class
-	// ends up being used in template files/plug-ins.
+	// Implements singleton pattern in case this class ends up being used in
+	// template files/plug-ins.
 	public static function getInstance() {
 
 		if (self::$instance == null) {
 			self::$instance = new self;
 		}
 
+		pnc_log('info', "Serving an instance of PodsNChimp...");
+
 		return self::$instance;
 	}
 
 	public static function setUp() {
-		// TODO code for any wpdb database prep goes here. eg. store preferences.
+		// TODO code for any wpdb database prep goes here. eg. store preferences, 
+		// or store IDs for existing MailChimp lists.
 	}
 
 	public static function tearDown() {
 		// TODO remove any wpdb traces.
 	}
 
-	// TODO function thisIsAFilter($pieces, ...) {}
+	/**
+	 * Takes data from the Pods post-save hook and sends
+	 * it to MailChimp.
+	 * 
+	 * @param  arrayFromPods $arrayFromPods
+	 * 	A single array of nested arrays 'fields', 'params', 'pod', and 'fields_active'.
+	 * 	
+	 * @param  boolean $is_new_item
+	 * 
+	 * @return void
+	 */
+	public function updateToMailChimp($arrayFromPods, $is_new_item) {
+		// TODO
+		// checkForUnsubscribe();
+		// replaceChimpDataIfNotUnsubscribe($isUnsubscribe);
+		pnc_log('info', '$arrayFromPods passed to ' . __METHOD__ . ' is:', $arrayFromPods);
+	}
+
+
+	public function deleteFromMailChimp($params, $pods) {
+		// TODO inspect $params and $pods as no online docs on them.
+		pnc_log('info', '$params passed to ' . __METHOD__ . ' is:', $params);
+		pnc_log('info', '$pods passed to ' . __METHOD__ . ' is:', $pods);
+	}
+
 }
+
+// Register with WordPress hooks, the necessary functions having been defined above.
+register_activation_hook(__FILE__, array('PodsNChimp', 'setUp'));
+register_uninstall_hook(__FILE__, array('PodsNChimp', 'tearDown'));
+
+add_action('plugins_loaded', array('PodsNChimp', 'getInstance')); // get an instance so that we can register with Pods' hooks, if not already done.
 
 ?>
