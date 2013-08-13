@@ -35,13 +35,22 @@ $authenticateKey = "key";
 $authenticateValue = "helloFromMailChimp";
 // ======================================== End authentication section ========================================
 
-$requestLog = "POST_request_log.csv";
-$logDirectory = dirname(__FILE__) . "/logs";
-$logger = KLogger::instance($logDirectory, KLogger::DEBUG);
-// $logger = KLogger::instance($logDirectory, KLogger::NOTICE); // Uncomment this line and comment out the above one, when in production.
+$chimpme_debug = true; // set to false when in production to removes verbose logs.
 
-$chimpme_usingStubs = false; // Set this to false if receiving webhooks from MailChimp (ie. when this plug-in is sent to production.)
-$chimpme_stubType = 'update';
+$logDirectory = dirname(__FILE__) . "/logs";
+$requestLogDirectory = $logDirectory . '/requests';
+$logger;
+$requestLogger;
+
+if ($chimpme_debug) {
+	$logger = KLogger::instance($logDirectory, KLogger::DEBUG);
+	$requestLogger = KLogger::instance($requestLogDirectory, KLogger::DEBUG);
+} else {
+	$logger = KLogger::instance($logDirectory, KLogger::NOTICE);
+}
+
+$chimpme_usingStubs = true; // Set this to false if receiving webhooks from MailChimp (ie. when this plug-in is sent to production.)
+$chimpme_stubType = 'unsubscribe';
 
 // Main logic of this plug-in.
 
@@ -51,7 +60,9 @@ $chimpme_stubType = 'update';
 
 if (!empty($_POST)) {
 
-	// logRequest();
+	if ($chimpme_debug) {
+		logRequest();
+	}
 
 	if (isset($_POST[$webhookEventKey])) {
 
@@ -59,7 +70,6 @@ if (!empty($_POST)) {
 
 			case $unsubscribeEvent:
 				chimpme_unsubscribe($_POST[$payloadKey]);
-				chimpme_log('info', $_POST); // debug
 				break;
 
 			case $updateEvent:
@@ -110,17 +120,19 @@ function chimpme_unsubscribe($data) {
 
 	if ($subscriber != null) { // TODO move this check (and the SQL above) into the future DAO class' unsubscribe method.
 
+		// TODO check that the unsubscriber hasn't already unsubscribed before
+		// following through with the below.
+
 		$unsubscribeQuery = "UPDATE $dbTableName
 			SET $dbUnsubscribeColumn = '$dbUnsubscribeBit'
 			WHERE $dbEmailColumn = '$unsubscriber'";
 
-		// $deleteQuery = "DELETE FROM $dbTableName
-		// 	WHERE $dbEmailColumn = '$unsubscriber'";
-		
 		$unsubscribeResult = $wpdb->query($unsubscribeQuery);
 		
 		if ($unsubscribeResult === false) { // using identicality check as both 0 and false might be returned.
 			chimpme_log('error', "Database error. Unable to delete $unsubscriber.");
+		} else {
+			chimpme_log('notice', "$unsubscriber has been unsubscribed.");
 		}
 
 	} else {
@@ -197,7 +209,7 @@ function chimpme_update($data) {
 		$updateSuccess = saveToPods($localData);
 
 		if ($updateSuccess) {
-			chimpme_log('notice', "Updated.");
+			chimpme_log('notice', "Updated $mailchimp_subscriber_email.");
 			chimpme_log('info', "Subscriber is now:",
 				getSubscriberDataFromPods($mailchimp_subscriber_email));
 		} else {
@@ -219,26 +231,9 @@ function chimpme_getEmail($payload) {
 	global $chimpme_usingStubs;
 	global $payloadKey, $emailKey;
 
-	if ($chimpme_usingStubs) {
-		// The HTTP request is a stub from the fireUnsubRequest method.
-		// Receive the JSON payload.
-
-		// $json = stripslashes($payload); // Undo any quotes from PHP or WP in the POST stub.
-
-		// $payloadArray = json_decode($json, true);
-		// chimpme_log('info', "Received POST request: ", $payloadArray); // debug.
-
-		// $result = $payloadArray['email'];
-
-
-		// Above commented out to test update handler. 12 Aug 2013, 1.55pm.
-		$result = $payload[$emailKey];
-
-	} else {
-		// $payload should be an array containing data related to the
-		// MailChimp event. (eg. Unsubscribe).
-		$result = $payload[$emailKey];	
-	}
+	// $payload should be an array containing data related to the
+	// MailChimp event. (eg. Unsubscribe).
+	$result = $payload[$emailKey];	
 	
 	// TODO verify this is a valid email address, else flag an error.
 	return $result;
@@ -372,47 +367,14 @@ function saveToPods($data) {
 
 /*
  * Helper method to inspect incoming POST requests.
- * Deposits a CSV file in this plug-in directory.
+ * Deposits a .txt file in the directory for request logs.
  */
 function logRequest() {
 
-	global $requestLog;
-	global $payloadKey;
+	global $requestLogger;
 
-	if (!$file = fopen($requestLog, "w")) {
+	$requestLogger->logInfo("Received POST request:", $_POST); 
 
-		$error = "Cannot open file $requestLog";
-
-		echo $error;
-		// chimpme_log('error', $error);
-
-	} else {
-
-		foreach ($_POST as $key => $value) {
-
-			$keyValuePair = array($key, $value);
-			fputcsv($file, $keyValuePair);
-
-			if ($key = $payloadKey && is_array($value)) { // Check that this is a MailChimp payload.
-
-				chimpme_log('info', "Received POST request:", $_POST); // TODO keep either this or the CSV below.
-
-				fputcsv($file, array("(CHIMP-ME NOTICE)", "===== Printing contents of \"$payloadKey\" ====="));
-
-				foreach ($value as $k => $v) { // Print the inner array.
-					$pair = array($k, $v);
-					fputcsv($file, $pair);
-				}
-
-				fputcsv($file, array("(CHIMP-ME NOTICE)", "===== Printed \"$payloadKey\" ====="));
-			}
-		}
-
-		fclose($file);
-
-		
-		
-	}
 }
 
 /*
@@ -518,7 +480,7 @@ function sendPostRequestStub() {
  */
 function fireUnsubRequest() {
 
-	$unsubscriberEmail = 'user12@echoandhere.com';
+	$unsubscriberEmail = 'kna3@np.edu.sg';
 	$requestTarget = plugins_url(basename(__FILE__), __FILE__); // Post back to this file.
 
 	// Sample unsubscribe requestst:
@@ -537,15 +499,14 @@ function fireUnsubRequest() {
 		'headers' => array(),
 		'body' => array( 'type' => 'unsubscribe',
 			'fired_at' =>  date(DATE_ISO8601),
-			'data' => json_encode(
-				array(
+			'data' => array(
 				"action"=>"unsub", "reason"=>"manual",
 				"id"=>"8249032551", "email"=>$unsubscriberEmail,
 				"email_type"=>"html", "ip_opt"=>"137.132.202.66",
 				"web_id"=>"17701457", "campaign_id"=>"6fb66e1caf",
 				"merges"=> array("EMAIL"=>$unsubscriberEmail,
 					"FNAME"=>"PH", "LNAME"=>"at Gmail"),
-				"list_id"=>"b970dd90fa"))),
+				"list_id"=>"b970dd90fa")),
 		'cookies' => array()
 	    )
     );
@@ -590,8 +551,7 @@ function fireUpdateRequest() {
 		'headers' => array(),
 		'body' => array( 'type' => 'profile',
 			'fired_at' =>  date(DATE_ISO8601),
-			'data' => // json_encode(
-				array(
+			'data' => array(
 				"id"=>"7bb817e5dc", "email"=>"$unsubscriberEmail",
 				"email_type"=>"html", "ip_opt"=>"137.132.119.222", "web_id"=>"24512937",
 				"merges"=> array("EMAIL"=>$unsubscriberEmail,
@@ -604,9 +564,7 @@ function fireUpdateRequest() {
 										"1"=>array("id"=>"2749",
 											"name"=>"Gender",
 											"groups"=>"Female"))),
-				"list_id"=>"b970dd90fa"))
-		// )
-    ,
+				"list_id"=>"b970dd90fa")),
 		'cookies' => array()
 	    )
     );
