@@ -1,7 +1,7 @@
 <?php
 
 /*
-Plugin Name: Pods 'n Chimp
+Plugin Name: Pod 'n Chimp
 Description: Two-way sync between Pods Framework and MailChimp.
 Version: 0.1
 Author: Pheng Heong Tan
@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
 require_once('config.php');
 require_once('/helpers/PCLogger.php');
 
-class PodsNChimp {
+class PodNChimp {
 
 	private static $instance;
 
@@ -45,7 +45,7 @@ class PodsNChimp {
 			self::$instance = new self;
 		}
 
-		pnc_log('info', "Serving an instance of PodsNChimp...");
+		pnc_log('info', "Serving an instance of PodNChimp...");
 
 		return self::$instance;
 	}
@@ -74,7 +74,10 @@ class PodsNChimp {
 		// TODO
 		// checkForUnsubscribe();
 		// replaceChimpDataIfNotUnsubscribe($isUnsubscribe);
-		pnc_log('info', '$arrayFromPods passed to ' . __METHOD__ . ' is:', $arrayFromPods);
+		
+		// The log 2 lines below has been commented out as it is too verbose.
+		// For reference, see log_2013-08-13.txt in /logs
+		// pnc_log('info', '$arrayFromPods passed to ' . __METHOD__ . ' is:', $arrayFromPods); // debug.
 	}
 
 
@@ -87,9 +90,9 @@ class PodsNChimp {
 }
 
 // Register with WordPress hooks, the necessary functions having been defined above.
-register_activation_hook(__FILE__, array('PodsNChimp', 'setUp'));
-register_uninstall_hook(__FILE__, array('PodsNChimp', 'tearDown'));
+register_activation_hook(__FILE__, array('PodNChimp', 'setUp'));
+register_uninstall_hook(__FILE__, array('PodNChimp', 'tearDown'));
 
-add_action('plugins_loaded', array('PodsNChimp', 'getInstance')); // get an instance so that we can register with Pods' hooks, if not already done.
+add_action('plugins_loaded', array('PodNChimp', 'getInstance')); // get an instance so that we can register with Pods' hooks, if not already done.
 
 ?>
