@@ -36,6 +36,9 @@ $pc_mailChimpListId = 'b970dd90fa';
 $pc_doubleOptIn = true; // Whether subscribers who are new to MailChimp will receive an opt-in email. Recommended by MailChimp guidelines.
 $pc_unsubscribeNotifications = true; // Whether to send a notification email to the address defined in the list email notification settings.
 
+$pc_grouping_countriesOfInterest = "Countries of interest";
+$pc_grouping_organization = "Organizations";
+
 // Developer constants.
 $webhookEventKey = 'type'; // key as in array key.
 $unsubscribeEvent = 'unsubscribe';
