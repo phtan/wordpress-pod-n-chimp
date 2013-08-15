@@ -104,7 +104,7 @@ class PodNChimp {
 			$data = self::prepareUpdateParameters($itemDetails, $is_new_item);
 
 			pnc_log('notice', "Updating with MailChimp...");
-			pnc_log('info', __METHOD__ . "Sending these params to MC:", $data); // debug.
+			pnc_log('info', __METHOD__ . " > Sending these params to MC:", $data); // debug.
 
 			// $mcapi = new Mailchimp($pc_mailChimpAPIKey, array('debug'=>true));
 			// $mcapi->lists->subscribe(

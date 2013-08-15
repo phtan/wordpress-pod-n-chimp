@@ -138,9 +138,11 @@ function chimpme_update($data) {
 
 	if ($local_subscriber != null) { // TODO move this check (and the SQL above) into the future DAO class' update method.
 
+		// Get our old data from Pods.
 		$localData = getSubscriberDataFromPods($mailchimp_subscriber_email);
 		pnc_log('info', "Found the subscriber: ", $localData); // debug
 
+		// Get new data from MailChimp.
 		try {
 			$remoteFields = PCDictionary::convertToPodsFields($data);
 		} catch (Exception $e) {

@@ -7,8 +7,7 @@ $dictLog = KLogger::instance(dirname(__FILE__) . '/dictionary_logs', KLogger::DE
 class PCDictionary {
 
 	/**
-	 * Converts the names of interest groupings in MailChimp to their equivalent
-	 * as Pods fields.
+	 * Converts the names of MailChimp fields to their Pods equivalent.
 	 * 
 	 * @throws Exception
 	 * 	If there is an error in conversion.
@@ -21,52 +20,61 @@ class PCDictionary {
 		// end debug.
 
 		global $pc_grouping_countriesOfInterest;
+		global $pc_grouping_organization1, $pc_grouping_organization2, $pc_grouping_organization3;
 
 		$podsFields = array();
 
-		$groupings = self::parseInterestGroupings($mailChimpPostRequest);
+		$mcEssentials = self::truncateMailChimpRequest($mailChimpPostRequest);
 
-		if (!empty($groupings)) {
+		if (!empty($mcEssentials)) {
 
-			foreach($groupings as $group => $value) {
+			// Make necessary renames.
+			
+			foreach($mcEssentials as $key => $value) {
 
 				// TODO replace with associative array implementation of a dictionary.
-				if ($group == $pc_grouping_countriesOfInterest) {
-					$podsFields['countries_of_interest'] = $value; // TODO hardcode the key like this for now.
+				switch ($key) {
 
-				} if ($group == 'organization') {
-					$podsFields['organization'] = $value;
+					case 'FNAME':
+						$podsFields['first_name'] = $value; // Hardcode the handles from this line and the one above like this, for now.
+						break;
 
-				} if ($group == 'organization2') {
-					$podsFields['organization2'] = $value;
+					case'LNAME':
+						$podsFields['last_name'] = $value;
+						break;
 
-				} if ($group == 'organization3') {
-					$podsFields['organization3'] = $value;
+					case $pc_grouping_countriesOfInterest:
+						$podsFields['countries_of_interest'] = $value;
+						break;
 
-				} if ($group == 'position') {
-					$podsFields['position'] = $value;
+					case $pc_grouping_organization1:
+						$podsFields['organization'] = $value;
+						break;
 
-				} if ($group == 'position2') {
-					$podsFields['position2'] = $value;
+					case $pc_grouping_organization2:
+						$podsFields['organization2'] = $value;
+						break;
 
-				} if ($group == 'position3') {
-					$podsFields['position3'] = $value;
-				} else {
-					$podsFields[$group] = $value; // copy as is, without converting.
+					case $pc_grouping_organization3:
+						$podsFields['organization3'] = $value;
+						break;
+
+					default:
+						// Do nothing.
 				}
 			}
 
 			return $podsFields;
 
 		} else {
-			throw new Exception("Post request cannot be parsed.");
+			throw new Exception(__CLASS__ . "> Error in parsing post request. Parse result unexpectedly empty.");
 		}
 
 	}
 
 	/**
-	 * Converts Pods fields that correspond to MailChimp Interest Groupings,
-	 * to their MailChimp names.
+	 * Converts Pods fields corresponding to MailChimp Interest Groupings
+	 * to their MailChimp equivalents.
 	 *
 	 * @param array $fields
 	 * 	An array of details for the Pods fields of an item. This should be provided
@@ -131,31 +139,75 @@ class PCDictionary {
 	}
 
 	/**
-	 * Private helper method.
+	 * Extracts information relevant to Pods from a MailChimp webhook callback.
 	 * 
-	 * @param  array $mailChimpPostRequest
+	 * @param  array $mailChimpPayload
 	 * 	The payload from the POST request sent by the MailChimp webhook.
+	 * 	As of 15 August 2013, the payload would be $thePostRequest['data'].
 	 * 
 	 * @return array
-	 * 	The Interest Groupings from MailChimp, converted to their Pods
-	 * 	equivalents.
+	 * 	A flat array of data useful to Pods.
 	 */
-	private function parseInterestGroupings($mailChimpPostRequest) {
+	private function truncateMailChimpRequest($mailChimpPayload) {
 		
-		$interestGroupings = array();
+		$flattenedRequest = array();
 
 		// TODO defensive code here.
+		
+		// Decide what to keep.
+		$relevantKeys = array('id', 'email', 'merges', 'list_id');
+		$relevantMerges = array('FNAME', 'LNAME', 'GROUPINGS');
 
 		// debug.
 		global $dictLog;
-		$dictLog->logInfo("From dict> Parsing these groupings: ", $mailChimpPostRequest['merges']['GROUPINGS']);
+		$dictLog->logInfo("From dict> Flattening. Dropping un-needed details...");
+		// end debug.
+		
+		foreach ($mailChimpPayload as $field => $value) {
 
-		foreach ($mailChimpPostRequest['merges']['GROUPINGS'] as $grouping) {
-			$groupingName = $grouping['name'];
-			$interestGroupings[$groupingName] = $grouping['groups'];
+			foreach ($relevantKeys as $key) { // First filter.
+
+				if ($field == $key) {
+
+					if ($field != 'merges') {
+
+						$flattenedRequest[$field] = $value;
+
+					} else {
+
+						foreach ($relevantMerges as $mergeTag) { // Second filter.
+
+							foreach ($value as $mergeTagKey => $mergeTagValue) { // Enter sub-array.
+
+								if ($mergeTagKey == $mergeTag) {
+
+									if ($mergeTagKey != 'GROUPINGS') { // Third filter
+
+										$flattenedRequest[$mergeTagKey] = $mergeTagValue;
+
+									} else {
+
+										foreach ($mergeTagValue as $groupingDetails) { // Enter array again.
+
+											$flattenedRequest[$groupingDetails['name']] = $groupingDetails['groups'];
+										}
+									}
+
+								}
+
+							}
+
+						}
+
+					}
+
+				} 
+			}
 		}
 
-		return $interestGroupings;
+		$dictLog->logInfo("From dict> Flattened:", $flattenedRequest); // end debug.
+
+		return $flattenedRequest;
 	}
 
 }
