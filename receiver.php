@@ -79,11 +79,10 @@ if (!empty($_POST)) {
 function chimpme_unsubscribe($data) {
 
 	global $wpdb;
-	global $dbTableName, $dbEmailColumn;
+	global $dbTableName, $dbEmailColumn, $dbUnsubscribeColumn;
+	global $dbUnsubscribeBit;
 	global $emailKey;
 
-	$dbUnsubscribeColumn = "newsletter";
-	$dbUnsubscribeBit = 0;
 	// TODO use prepare statements in wpdb calls below.
 	
 	$unsubscriber = chimpme_getEmail($data, $emailKey);

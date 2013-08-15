@@ -7,6 +7,8 @@
 // DB parameters
 $dbTableName = "wp_pods_contact";
 $dbEmailColumn = "email";
+$dbUnsubscribeColumn = "newsletter";
+$dbUnsubscribeBit = 0; // This value represents an unsubscribe.
 
 // Pods CMS parameters
 $podName = 'contact';

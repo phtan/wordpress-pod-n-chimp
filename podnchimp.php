@@ -60,31 +60,47 @@ class PodNChimp {
 	}
 
 	/**
-	 * Takes data from the Pods post-save hook and sends
-	 * it to MailChimp.
+	 * Takes data from the Pods post-save hook and sends it to MailChimp.
+	 * This function must return the array of Pods data if it's attached to
+	 * to the Pods pre-save hook instead.
 	 * 
 	 * @param  arrayFromPods $arrayFromPods
 	 * 	A single array of nested arrays 'fields', 'params', 'pod', and 'fields_active'.
+	 * 	The parameters are given by Scott himself in an
+	 * 	{@link https://github.com/pods-framework/pods/issues/597 issue comment}.
 	 * 	
 	 * @param  boolean $is_new_item
 	 * 
 	 * @return void
 	 */
 	public function updateToMailChimp($arrayFromPods, $is_new_item) {
+		
+		// value of each field is in $arrayFromPods['fields']['someField']['value']; // debug.
+		
+		global $dbUnsubscribeColumn, $dbUnsubscribeBit;
+
+		if (empty($arrayFromPods)) {
+			pnc_log('error', "PodNChimp> Cannot update. Expected data from Pods, but received no data.");
+			return;
+		}
+
+		$includesUnsubscribe = false;
+
+		
+
 		// TODO
 		// checkForUnsubscribe();
-		// replaceChimpDataIfNotUnsubscribe($isUnsubscribe);
-		
-		// The log 2 lines below has been commented out as it is too verbose.
-		// For reference, see log_2013-08-13.txt in /logs
-		// pnc_log('info', '$arrayFromPods passed to ' . __METHOD__ . ' is:', $arrayFromPods); // debug.
+		// $dataForChimp = convertToChimp($arrayFromPods);
+		// replaceChimpDataOtherwiseUnsubscribe($dataForChimp, $isUnsubscribe);
 	}
 
 
 	public function deleteFromMailChimp($params, $pods) {
-		// TODO inspect $params and $pods as no online docs on them.
-		pnc_log('info', '$params passed to ' . __METHOD__ . ' is:', $params);
-		pnc_log('info', '$pods passed to ' . __METHOD__ . ' is:', $pods);
+		// The contents of $params and $pods are logged in /logs/data_from_pods_afterSave_hook.txt
+		
+		// The Pod item being deleted can be found as $params['id'] from the pod
+		// with name $params['pod'] // debug.
+		
 	}
 
 }
