@@ -36,10 +36,10 @@ $authenticateValue = "HELLO-FROM-MAILCHIMP"; // Alphanumeric sequence recommende
 
 // Whether subscribers who are new to MailChimp will receive an opt-in email.
 // Recommended by MailChimp guidelines.
-$pc_doubleOptIn = true;
+$pc_doubleOptIn = false;
 
  // Whether to send a welcome email if the double opt-in above is not enabled.
-$pc_sendWelcome = true;
+$pc_sendWelcome = false;
 
  // Whether to send a notification email to the address defined in the List's
  // email notification settings.
