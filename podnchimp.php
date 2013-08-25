@@ -25,6 +25,7 @@ class PodNChimp {
 
 	private static $instance;
 
+
 	private function __construct() {
 		
 		global $podName;
@@ -79,30 +80,36 @@ class PodNChimp {
 	 */
 	public function updateToMailChimp($arrayFromPods, $is_new_item) {
 		
-		// value of each field is in $arrayFromPods['fields']['someField']['value']; // debug.
-		// 
-		pnc_log('info', "Post-save hook fired. Checking if this subscriber is new to Pods:", $is_new_item); // debug
+		// debug
+		$isNew = ($is_new_item == 1);
+		pnc_log('info', "Post-save hook fired. Checking if this subscriber is new to Pods: $isNew");
+
+		// end debug.
 
 		global $podsDataKey;
-		global $pc_mailChimpAPIKey;
+		global $pc_mailChimpAPIKey, $pc_mailChimpListID;
 
+		// Defensive code to ensure we have the data we want.
 		if (empty($arrayFromPods)) {
 			pnc_log('error', __CLASS__ . "> Cannot update. Expected data from Pods, but received no data.");
 			return;
 		}
 
-		if (self::isUnsubscribe($arrayFromPods)) {
-			
-			pnc_log('info', __METHOD__ . " > Detected unsubscribe from Pods."); // debug
+		$subscriber = "";
+		try {
+			$subscriber = self::getEmail($arrayFromPods);
+		} catch (Exception $e) {
+			pnc_log('error', $e->getMessage());
+			die();
+		}
 
-			// TODO
-			// prepareUnsubParams($arrayFromPods);
-			// unsubWithMCAPI($params);
+		// Check for the kind of update to do.
+		if (self::wantsNewsletter($arrayFromPods)) {
 
-		} else {
-			
-			$itemDetails = $arrayFromPods[$podsDataKey];
-			$data = self::prepareUpdateParameters($itemDetails, $is_new_item);
+			$shouldCreateNew = !self::existsOnMailChimp($subscriber, $pc_mailChimpListID);
+			$itemDetails = $arrayFromPods[$podsDataKey];			
+
+			$data = self::prepareUpdateParameters($itemDetails, $shouldCreateNew);
 
 			pnc_log('notice', "Updating with MailChimp...");
 			pnc_log('info', __METHOD__ . " > Sending these params to MC:", $data); // debug.
@@ -136,6 +143,22 @@ class PodNChimp {
 			} else {
 			    pnc_log('notice', "Updated.");
 			}
+		
+		} elseif (self::existsOnMailChimp($subscriber, $pc_mailChimpListID)) {	
+
+			// Doesn't want newsletter, yet exists as a subscriber on MailChimp.
+			
+			pnc_log('info', __METHOD__ . " > Detected an unsubscribe sent from Pods."); // debug
+
+			self::unsubscribeFromMailChimp($subscriber, $pc_mailChimpListID);
+			
+		} else {
+
+			// Pods tells us this subscriber doesn't want newsletters.
+			// Conveniently, this subscriber also doesn't exist on MailChimp yet.
+			
+			// Do nothing.
+
 		}
 	}
 
@@ -146,10 +169,30 @@ class PodNChimp {
 		// The Pod item being deleted can be found as $params['id'] from the pod
 		// with name $params['pod'] // debug.
 		
+		// TODO
+		
+	}
+
+	/**
+	 * Unsubscribes an user from a MailChimp mailing list.
+	 * 
+	 * @param  string $email
+	 *  Email address to be unsubscribed.
+	 *  
+	 * @param  string $listID
+	 *  The ID of the list as assigned by MailChimp.
+	 *  
+	 * @return void
+	 * 
+	 */
+	public function unsubscribeFromMailChimp($email, $listID) {
+		$isDelete = false;
+		self::unsubscribe($email, $listID, $isDelete);
 	}
 
 	/** 
-	 * Checks if the save to some Pods item constitutes an unsubscribe.
+	 * Checks if the save to some Pods item constitutes an intention to subscribe
+	 * to a newsletter.
 	 * Private method.
 	 *
 	 * @param array $hookData
@@ -158,13 +201,13 @@ class PodNChimp {
 	 * @return bool
 	 * 	True if there has been an unsubscribe.
 	 */
-	private function isUnsubscribe($hookData) {
+	private function wantsNewsletter($hookData) {
 
 		global $dbUnsubscribeColumn, $dbUnsubscribeBit;
 
-		pnc_log('info', __METHOD__ . " > Checking for unsubscribe..."); // debug
-
-		return ($hookData['fields'][$dbUnsubscribeColumn]['value'] === $dbUnsubscribeBit);
+		$unsubscribe = ($hookData['fields'][$dbUnsubscribeColumn]['value'] == $dbUnsubscribeBit);
+		
+		return !$unsubscribe;
 	}
 
 	/**
@@ -184,6 +227,8 @@ class PodNChimp {
 	 */
 	private function prepareUpdateParameters($fields, $isNewSubscriber) {
 
+		global $pc_mailChimpListID, $pc_defaultEmailPreference, $pc_doubleOptIn, $pc_sendWelcome;
+		
 		if (empty($fields)) {
 			pnc_log('warn', __CLASS__ . " > Cannot update MailChimp. No data received from Pods.");
 			return;
@@ -193,8 +238,8 @@ class PodNChimp {
 		$overwriteExistingGroupingsAtMailChimp = true;
 		$shouldUpdateExistingSubscriber = !($isNewSubscriber == 1);
 
-		global $pc_mailChimpListID;
-
+		// value of each field in the array passed in from the Pods hook
+		// is stored under the key $fields['fields']['someField']['value']
 		$params = array(
 
 			'id' => $pc_mailChimpListID,
@@ -215,14 +260,166 @@ class PodNChimp {
 			'email_type' => $pc_defaultEmailPreference,
 			'double_optin' => $pc_doubleOptIn,
 			'update_existing' => !$isNewSubscriber,
-			'replace_interests' => $overwriteMailChimpsExistingGroupings,
+			'replace_interests' => $overwriteExistingGroupingsAtMailChimp,
 			'send_welcome' => $pc_sendWelcome
 			);
 
 		return $params;
 	}
 
+	/**
+	 * Retrieves the email from the data from Pods.
+	 * 
+	 * @param array $hookData
+	 * 	An array passed to the callback function by the Pods post-save hook.
+	 * 	
+	 * @return string
+	 *  The email if it can be found.
+	 *
+	 * @throws  Exception
+	 *  If the email cannot be retrieved from $hookData.
+	 */
+	private function getEmail($hookData) {
+		$email = "";
+		global $podEmailField;
+
+		pnc_log('info', __METHOD__ . " > Getting email from hook data..."); // debug.
+		if (!empty($hookData)) {
+
+			if (isset($hookData['fields'][$podEmailField]['value'])) {
+			
+				$email = $hookData['fields'][$podEmailField]['value'];	
+			
+			} else {
+				throw new Exception("Cannot retrieve email. Key '$podsEmailField' absent in array.");
+			}
+
+		} else {
+
+			throw new Exception("Cannot retrieve email. Argument is empty.");
+		}
+
+		pnc_log('info', __METHOD__ . " > Got the email $email"); // debug.
+		return $email;
+	}
+
+	/**
+	 * Checks if the specified email already exists on the specified
+	 * MailChimp mailing list.
+	 * 
+	 * @param  string $email
+	 *  The email to check MailChimp for.
+	 *
+	 * @param string $listID
+	 *  The ID of the MailChimp list. This can be obtained from the MailChimp
+	 *  website.
+	 * 
+	 * @return bool
+	 *  True if there is a subscriber on MailChimp with the specified
+	 *  email address.
+	 */
+	private function existsOnMailChimp($email, $listID) {
+		
+		global $pc_mailChimpAPIKey;
+		$exists = false;
+		$existFlags = array('subscribed', 'pending'); // Set the MailChimp statuses to check for here.
+
+		$mailchimp = new MCAPI($pc_mailChimpAPIKey); // TODO replace with a "global" MCAPI object.
+		$result = $mailchimp->listMemberInfo($listID, $email);
+		
+		if ($result['success'] >= 1) {
+
+			if ($result['success'] > 1) {
+				pnc_log('warn', "More than one subscriber found on MailChimp with the email $email");	
+			}
+
+			foreach ($result['data'] as $oneResult) {
+
+				pnc_log('info', __METHOD__ . " > ======= MCAPI::listMemberInfo ======= ");
+
+				foreach ($oneResult as $infoKey => $infoValue) {
+
+					pnc_log('info', __METHOD__ . " > $infoKey = $infoValue"); // debug.
+					
+					if ($infoKey == 'status') {
+
+						foreach ($existFlags as $flag) { // check through the statuses that represent a subscribed address.
+
+							if ($infoValue = $flag) {
+								$exists = true;
+								pnc_log('info', __METHOD__ . " > ======= member exists ======= ");
+								break 3; // stop all loops. we've found what we wanted.
+							}
+							
+						}
+							
+					}					
+				}
+
+				pnc_log('info', __METHOD__ . " > ======= end one member's info ======= ");
+
+			}
+			
+
+		} elseif ($result['success'] == 0) {
+			pnc_log('warn', "No subscriber found on MailChimp having the email $email");
+
+		}
+
+		// check in case of error with mailchimp calls.
+		if ($mailchimp->errorCode) {
+				pnc_log('error', __METHOD__ . " > Unable to query MailChimp.\tCode=" . $mailchimp->errorCode . "\tMsg=". $mailchimp->errorMessage);	
+		}
+
+		return $exists;
+		
+	}
+
+	/**
+	 * Unsubscribes or deletes a member from a MailChimp list.
+	 * This method interfaces with the MailChimp API.
+	 * Private method.
+	 * 
+	 * @param  string $email
+	 *  The email address to be unsubscribed.
+	 *  
+	 * @param  string $listID
+	 *  The ID of the list, as assigned by MailChimp.
+	 *  
+	 * @param  boolean $is_delete
+	 *  Whether to remove the email address from the mailing list, on top
+	 *  of marking it as unsubscribed.
+	 * 
+	 * @return void
+	 *  Logs the error if there are problems with the call to MailChimp.
+	 */
+	private function unsubscribe($email, $listID, $is_delete) {
+		
+		global $pc_mailChimpAPIKey;
+		global $pc_sendGoodbye, $pc_unsubscribeNotifications;
+		
+		$mailchimp  = new MCAPI($pc_mailChimpAPIKey);
+
+		$mailchimp->listUnsubscribe($listID, $email, $is_delete, $pc_sendGoodbye, $pc_unsubscribeNotifications);
+		
+		if ($mailchimp->errorCode) {
+		 	pnc_log('error', "Unable to unsubscribe with MailChimp.\tCode=" . $mailchimp->errorCode . "\tMsg=". $mailchimp->errorMessage);
+		} else {
+
+			$message = "";
+			if ($isDelete) {
+				$message = "Deleted from MailChimp.";
+			} else {
+				$message = "Unsubscribed from MailChimp.";
+			}
+
+			pnc_log('notice', $message);
+		    
+		}
+	}
 }
+
+
 
 // Register with WordPress hooks, the necessary functions having been defined above.
 register_activation_hook(__FILE__, array('PodNChimp', 'setUp'));
