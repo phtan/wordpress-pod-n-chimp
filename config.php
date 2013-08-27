@@ -22,27 +22,26 @@ $dbUnsubscribeColumn = "newsletter"; // The column tracking unsubscribes.
 $dbUnsubscribeBit = 0; // The value representing an unsubscribe.
 
 // Webhook security.
-// Ensure the below values are specified on MailChimp, as part of the
-// URL that you provide for the webhook callback.
-// 
-// For example, the callback URL should look like
-// http://send.callback.to/this-plugin.php?authenticateKey=authenticateValue)
-$authenticateKey = "ANY-NAME-FOR-YOUR-KEY";
-$authenticateValue = "HELLO-FROM-MAILCHIMP"; // Alphanumeric sequence recommended.
+// The values below will be used to verify the authentication details you gave
+// to the MailChimp webhook.
+// As defaults, they have been filled in with the values for the callback URL
+// http://your-site.com/wp-content/.../receiver.php?myKey=thisKeyIsForMailChimp
+$authenticateKey = "myKey";
+$authenticateValue = "thisKeyIsForMailChimp";
 
 // =============================================================================
 // OPTIONS FOR MAILCHIMP
 // =============================================================================
 
 // Whether subscribers who are new to MailChimp will receive an opt-in email.
-// Recommended by MailChimp guidelines.
+// MailChimp guidelines recommend sending this email.
 $pc_doubleOptIn = false;
 
  // Whether to send a welcome email if the double opt-in above is not enabled.
 $pc_sendWelcome = false;
 
- // Whether to send a notification email to the address defined in the List's
- // email notification settings.
+ // Whether to send a notification email, to the address defined in the Mailing
+ // List's settings on the MailChimp website, when there has been an unsubscribe.
 $pc_unsubscribeNotifications = true;
 
  // Email type preference for the email ('html' or 'text'). MailChimp's
@@ -63,7 +62,7 @@ $pc_defaultEmailPreference = 'html';
 
 // Sync-ing from Pods to MailChimp
 // -----------------------------------------------------------------------------
-// Specify the Pods fields that you want sync-ed to MailChimp, and their
+// Specify the Pods fields you want to sync to MailChimp, and their
 // corresponding MailChimp Interest Groupings.
 $pc_podsFields = array(
 
