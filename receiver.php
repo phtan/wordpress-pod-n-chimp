@@ -10,8 +10,8 @@ Author URI: https://plus.google.com/106730175494661681756
 */
 
 require_once(dirname(dirname(dirname(dirname( __FILE__ )))) . '/wp-load.php' ); // TODO find a better way to locate wp-load.php as it might not always be in the WP root folder.
-// require_once('config.php');
-require_once('config_develop.php'); // use development environment presets.
+require_once('config.php');
+// require_once('config_develop.php'); // use development environment presets.
 require_once('/helpers/PCLogger.php');
 require_once('/helpers/PCDictionary.php');
 require_once('/helpers/PCRequestQueue.php');

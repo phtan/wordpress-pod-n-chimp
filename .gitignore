@@ -1,3 +1,4 @@
+config_develop.php
 *.csv
 logs/*
 lib/log*

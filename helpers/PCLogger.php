@@ -8,8 +8,8 @@
  */
 
 require_once(dirname(dirname(__FILE__)) . '/lib/KLogger.php');
-// require_once(dirname(dirname(__FILE__)) . '/config.php');
-require_once(dirname(dirname(__FILE__)) . '/config_develop.php'); // use development environment presets.
+require_once(dirname(dirname(__FILE__)) . '/config.php');
+// require_once(dirname(dirname(__FILE__)) . '/config_develop.php'); // use development environment presets.
 
 $logDirectory = dirname(dirname(__FILE__)) . "/logs";
 $requestLogDirectory = $logDirectory . '/requests';

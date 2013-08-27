@@ -14,8 +14,8 @@ if (!defined('ABSPATH')) {
 	exit();
 }
 
-// require_once('config.php');
-require_once('config_develop.php'); // use development environment presets.
+require_once('config.php');
+// require_once('config_develop.php'); // use development environment presets.
 require_once('/helpers/PCLogger.php');
 require_once('/helpers/PCDictionary.php');
 require_once('/helpers/PCRequestQueue.php');
