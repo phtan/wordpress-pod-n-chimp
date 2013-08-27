@@ -19,8 +19,7 @@ require_once('config_develop.php'); // use development environment presets.
 require_once('/helpers/PCLogger.php');
 require_once('/helpers/PCDictionary.php');
 require_once('/helpers/PCRequestQueue.php');
-require_once('/lib/MCAPI.class.php'); // debug. testing alternative to the wrapper below.
-// require_once('/lib/mailchimp-api-php/src/Mailchimp.php');
+require_once('/lib/MCAPI.class.php');
 
 class PodNChimp {
 
@@ -121,18 +120,6 @@ class PodNChimp {
 
 			pnc_log('notice', "Updating with MailChimp...");
 			pnc_log('info', __METHOD__ . " > Sending these params to MC:", $data); // debug.
-
-			// $mcapi = new Mailchimp($pc_mailChimpAPIKey, array('debug'=>true));
-			// $mcapi->lists->subscribe(
-			// 	$data['id'],
-			// 	$data['email'],
-			// 	$data['merge_vars'],
-			// 	$data['email_type'],
-			// 	$data['double_optin'],
-			// 	$data['update_existing'],
-			// 	$data['replace_interests'],
-			// 	$data['send_welcome']
-			// 	);
 			
 			$mailchimp = new MCAPI($pc_mailChimpAPIKey);
 			$mailchimp->listSubscribe(

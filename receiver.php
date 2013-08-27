@@ -9,7 +9,11 @@ Author: Pheng Heong Tan
 Author URI: https://plus.google.com/106730175494661681756
 */
 
-// ======== Ensure the below values are specified in the webhook callback URL passed to MailChimp =============
+// =============================================================================
+// AUTHENTICATION DETAILS GO HERE.
+// =============================================================================
+// 
+// Ensure the below values are specified in the webhook callback URL passed to MailChimp =============
 // (The URL should look like http://send.callback.here/this-plugin.php?authenticateKey=authenticateValue)
 $authenticateKey = "key";
 $authenticateValue = "helloFromMailChimp";
