@@ -20,11 +20,10 @@ require_once(dirname(dirname(dirname(dirname( __FILE__ )))) . '/wp-load.php' ); 
 require_once('config_develop.php'); // use development environment presets.
 require_once('/helpers/PCLogger.php');
 require_once('/helpers/PCDictionary.php');
+require_once('/helpers/PCRequestQueue.php');
 
 // Constants for this file.
-
 $upemailBuffer = 1000000; // Number of micro-seconds to wait for 'upemail' handler to finish.
-
 
 // ==============================
 // Main logic of this plug-in.
@@ -187,9 +186,14 @@ function chimpme_update($data) {
 			}
 		}
 
+		$queue = PCRequestQueue::getInstance();
+		$queue->add($mailchimp_subscriber_email);
+
 		$updateSuccess = saveToPods($localData);
 
 		if ($updateSuccess) {
+
+			$queue->markDone($mailchimp_subscriber_email);
 			pnc_log('notice', "Updated $mailchimp_subscriber_email.");
 			pnc_log('info', "Subscriber is now:",
 				getSubscriberDataFromPods($mailchimp_subscriber_email));

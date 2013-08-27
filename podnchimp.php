@@ -18,6 +18,7 @@ if (!defined('ABSPATH')) {
 require_once('config_develop.php'); // use development environment presets.
 require_once('/helpers/PCLogger.php');
 require_once('/helpers/PCDictionary.php');
+require_once('/helpers/PCRequestQueue.php');
 require_once('/lib/MCAPI.class.php'); // debug. testing alternative to the wrapper below.
 // require_once('/lib/mailchimp-api-php/src/Mailchimp.php');
 
@@ -25,19 +26,18 @@ class PodNChimp {
 
 	private static $instance;
 
-
 	private function __construct() {
 		
 		global $podName;
 
 		$postSaveFilter = 'pods_api_post_save_pod_item_' . $podName;
 		$saveFunctionArguments = 2;
-		$postDeleteFilter = 'pods_api_post_delete_pod_item_' . $podName;
+		$preDeleteFilter = 'pods_api_pre_delete_pod_item_' . $podName;
 		$deleteFunctionArguments = 2;
 		$filterFunctionPriority = 10; // Lower numbers mean earlier execution by WordPress.
 
 		add_filter($postSaveFilter, array($this, 'updateToMailChimp'), $filterFunctionPriority, $saveFunctionArguments);
-		add_filter($postDeleteFilter, array($this, 'deleteFromMailChimp'), $filterFunctionPriority, $deleteFunctionArguments);
+		add_filter($preDeleteFilter, array($this, 'deleteFromMailChimp'), $filterFunctionPriority, $deleteFunctionArguments);
 
 		// TODO add filters for pods other than contacts. Eg. countries_of_interest
 	}
@@ -102,6 +102,14 @@ class PodNChimp {
 			pnc_log('error', $e->getMessage());
 			die();
 		}
+
+		$queue = PCRequestQueue::getInstance();
+		if ($queue->isInQueue($subscriber)) {
+			pnc_log('info', __METHOD__ . "> Not updating MailChimp as this Pods save was triggered by MailChimp itself.");
+			return;
+		}
+
+		// End defensive code.
 
 		// Check for the kind of update to do.
 		if (self::wantsNewsletter($arrayFromPods)) {
@@ -169,8 +177,7 @@ class PodNChimp {
 		// The Pod item being deleted can be found as $params['id'] from the pod
 		// with name $params['pod'] // debug.
 		
-		// TODO
-		
+		// TODO		
 	}
 
 	/**
