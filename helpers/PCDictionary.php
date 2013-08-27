@@ -9,6 +9,9 @@ class PCDictionary {
 	/**
 	 * Converts the names of MailChimp fields to their Pods equivalent.
 	 * 
+	 * @return array
+	 *  The renamed fields.
+	 *
 	 * @throws Exception
 	 * 	If there is an error in conversion.
 	 */
@@ -19,48 +22,26 @@ class PCDictionary {
 		$dictLog->logInfo('Request is: ', $mailChimpPostRequest);
 		// end debug.
 
-		global $pc_grouping_countriesOfInterest;
-		global $pc_grouping_organization1, $pc_grouping_organization2, $pc_grouping_organization3;
-
 		$podsFields = array();
 
 		$mcEssentials = self::truncateMailChimpRequest($mailChimpPostRequest);
 
 		if (!empty($mcEssentials)) {
 
-			// Make necessary renames.
-			
+			try {
+				$mappings = self::buildMappingFromMCToPods();
+			} catch (Exception $e) {
+				throw $e;
+			}
+
+			// Make necessary renames.			
 			foreach($mcEssentials as $key => $value) {
 
-				// TODO replace with associative array implementation of a dictionary.
-				switch ($key) {
+				if(isset($mappings[$key])) {
 
-					case 'FNAME':
-						$podsFields['first_name'] = $value; // Hardcode the handles from this line and the one above like this, for now.
-						break;
+					$podsEquivalent = $mappings[$key];
+					$podsFields[$podsEquivalent] = $value;
 
-					case'LNAME':
-						$podsFields['last_name'] = $value;
-						break;
-
-					case $pc_grouping_countriesOfInterest:
-						$podsFields['countries_of_interest'] = $value;
-						break;
-
-					case $pc_grouping_organization1:
-						$podsFields['organization'] = $value;
-						break;
-
-					case $pc_grouping_organization2:
-						$podsFields['organization2'] = $value;
-						break;
-
-					case $pc_grouping_organization3:
-						$podsFields['organization3'] = $value;
-						break;
-
-					default:
-						// Do nothing.
 				}
 			}
 
@@ -99,20 +80,9 @@ class PCDictionary {
 
 		if (!empty($fields)) {
 
-			// Exhaustively enumerate the mapping.
-			global $pc_grouping_countriesOfInterest, $pc_grouping_organizations;
-			
-			$relevantFields = array(
+			global $pc_podsFields; // Exhaustive mapping of Pods field names to MailChimp groupings.
 
-				'countries_of_interest' => $pc_grouping_countriesOfInterest,
-				'organization1' => $pc_grouping_organization1,
-				'organization2' => $pc_grouping_organization2,
-				'organization3' => $pc_grouping_organization3,
-				// Another Pods field => Associated MailChimp grouping
-
-				);
-
-			foreach($relevantFields as $podsField => $chimpGrouping) {
+			foreach($pc_podsFields as $podsField => $chimpGrouping) {
 
 				if (isset($fields[$podsField])) {
 					
@@ -153,10 +123,8 @@ class PCDictionary {
 		$flattenedRequest = array();
 
 		// TODO defensive code here.
-		
-		// Decide what to keep.
-		$relevantKeys = array('id', 'email', 'merges', 'list_id');
-		$relevantMerges = array('FNAME', 'LNAME', 'GROUPINGS');
+
+		global $pc_relevantKeys, $pc_relevantMergeTags; // Decides what to keep from the payload.
 
 		// debug.
 		global $dictLog;
@@ -165,7 +133,7 @@ class PCDictionary {
 		
 		foreach ($mailChimpPayload as $field => $value) {
 
-			foreach ($relevantKeys as $key) { // First filter.
+			foreach ($pc_relevantKeys as $key) { // First filter.
 
 				if ($field == $key) {
 
@@ -175,7 +143,7 @@ class PCDictionary {
 
 					} else {
 
-						foreach ($relevantMerges as $mergeTag) { // Second filter.
+						foreach ($pc_relevantMergeTags as $mergeTag) { // Second filter.
 
 							foreach ($value as $mergeTagKey => $mergeTagValue) { // Enter sub-array.
 
@@ -208,6 +176,37 @@ class PCDictionary {
 		$dictLog->logInfo("From dict> Flattened:", $flattenedRequest); // end debug.
 
 		return $flattenedRequest;
+	}
+
+	/*
+	 * Builds a reference for the Pods equivalent for specific MailChimp
+	 * variables.
+	 *
+	 * @return array
+	 *  An associative array with the MailChimp variable as the key
+	 *  and the Pods equivalent as the value.
+	 *
+	 * @throws Exception
+	 *  If there is an error in obtaining the information needed,
+	 *  or in building the array.
+	 */
+	private function buildMappingFromMCToPods() {
+
+		global $pc_podsFields, $pc_mergeTags;
+		$map = array();
+
+		$groupingsIsToFields = array_flip($pc_podsFields); // Expected result: array('chimpInterestGroup' => 'podsFieldName', ...)
+		
+		if ($groupingsIsToFields == null) {
+
+			throw new Exception (__CLASS__ . " > Cannot map MailChimp names to Pods names. Error with flipping \$pc_podsFields (defined in config.php)");
+
+		} else {
+
+			$map = array_merge($groupingsIsToFields, $pc_mergeTags);
+		}
+
+		return $map;
 	}
 
 }

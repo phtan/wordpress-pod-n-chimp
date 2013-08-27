@@ -9,16 +9,6 @@ Author: Pheng Heong Tan
 Author URI: https://plus.google.com/106730175494661681756
 */
 
-// =============================================================================
-// AUTHENTICATION DETAILS GO HERE.
-// =============================================================================
-// 
-// Ensure the below values are specified in the webhook callback URL passed to MailChimp =============
-// (The URL should look like http://send.callback.here/this-plugin.php?authenticateKey=authenticateValue)
-$authenticateKey = "key";
-$authenticateValue = "helloFromMailChimp";
-// ======================================== End authentication section ========================================
-
 require_once(dirname(dirname(dirname(dirname( __FILE__ )))) . '/wp-load.php' ); // TODO find a better way to locate wp-load.php as it might not always be in the WP root folder.
 // require_once('config.php');
 require_once('config_develop.php'); // use development environment presets.
@@ -28,16 +18,21 @@ require_once('/helpers/PCRequestQueue.php');
 
 // Constants for this file.
 $upemailBuffer = 1000000; // Number of micro-seconds to wait for 'upemail' handler to finish.
+global $authenticateKey, $authenticateValue;
 
 // ==============================
 // Main logic of this plug-in.
 // ==============================
 
-// TODO Un-comment the next 2 lines in production.
-// if (isset($_POST[$authenticateKey]) &&
-// 		$_POST[$authenticateKey] == $authenticateValue) { // This is a callback from MailChimp.
-
 if (!empty($_POST)) {
+
+	if (!isset($_GET[$authenticateKey]) ||
+			$_GET[$authenticateKey] != $authenticateValue) {
+
+		pnc_log('error', "Authentication failed. Check that '?$authenticateKey=$authenticateValue' has been appended to the URL you provided to MailChimp's webhook. Eg. http://yoursite.com/wp-content/plugins/podnchimp/receiver.php?$authenticateKey=$authenticateValue");
+		pnc_log('notice', "Stopped.");
+		exit();
+	}
 
 	if ($chimpme_debug) {
 		logRequest();

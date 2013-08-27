@@ -19,7 +19,7 @@ $requestLogger;
 // Declare loggers.
 if ($chimpme_debug) {
 
-	$logger = KLogger::instance($logDirectory, KLogger::NOTICE);
+	$logger = KLogger::instance($logDirectory, KLogger::DEBUG);
 	$requestLogger = KLogger::instance($requestLogDirectory, KLogger::DEBUG);
 
 } else {
