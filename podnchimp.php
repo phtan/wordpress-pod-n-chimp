@@ -110,50 +110,54 @@ class PodNChimp {
 
 		// End defensive code.
 
-		// Check for the kind of update to do.
-		if (self::wantsNewsletter($arrayFromPods)) {
+		// First, update MailChimp.
+		$isOnMailChimp = self::existsOnMailChimp($subscriber, $pc_mailChimpListID);
+		$createNewSubscriber = !$isOnMailChimp;
+		$itemDetails = $arrayFromPods[$podsDataKey];			
 
-			$shouldCreateNew = !self::existsOnMailChimp($subscriber, $pc_mailChimpListID);
-			$itemDetails = $arrayFromPods[$podsDataKey];			
+		$data = self::prepareUpdateParameters($itemDetails, $createNewSubscriber);
 
-			$data = self::prepareUpdateParameters($itemDetails, $shouldCreateNew);
-
-			pnc_log('notice', "Updating with MailChimp...");
-			pnc_log('info', __METHOD__ . " > Sending these params to MC:", $data); // debug.
-			
-			$mailchimp = new MCAPI($pc_mailChimpAPIKey);
-			$mailchimp->listSubscribe(
-				$data['id'],
-				$data['email']['email'],
-				$data['merge_vars'],
-				$data['email_type'],
-				$data['double_optin'],
-				$data['update_existing'],
-				$data['replace_interests'],
-				$data['send_welcome']
-				);
-
-			if ($mailchimp->errorCode) {
-				pnc_log('error', "Unable to update.\tCode=" . $mailchimp->errorCode . "\tMsg=". $mailchimp->errorMessage);
-			} else {
-			    pnc_log('notice', "Updated.");
-			}
+		pnc_log('notice', "Updating with MailChimp...");
+		pnc_log('info', __METHOD__ . " > Sending these params to MC:", $data); // debug.
 		
-		} elseif (self::existsOnMailChimp($subscriber, $pc_mailChimpListID)) {	
+		$mailchimp = new MCAPI($pc_mailChimpAPIKey);
+		$mailchimp->listSubscribe(
+			$data['id'],
+			$data['email']['email'],
+			$data['merge_vars'],
+			$data['email_type'],
+			$data['double_optin'],
+			$data['update_existing'],
+			$data['replace_interests'],
+			$data['send_welcome']
+			);
 
-			// Doesn't want newsletter, yet exists as a subscriber on MailChimp.
-			
-			pnc_log('info', __METHOD__ . " > Detected an unsubscribe sent from Pods."); // debug
-
-			self::unsubscribeFromMailChimp($subscriber, $pc_mailChimpListID);
-			
+		if ($mailchimp->errorCode) {
+			pnc_log('error', "Unable to update.\tCode=" . $mailchimp->errorCode . "\tMsg=". $mailchimp->errorMessage);
 		} else {
+		    pnc_log('notice', "Updated.");
+		}
+		
+		// Then, check if there is a change to this subscriber's subscription status.
+		if (!self::wantsNewsletter($arrayFromPods)) {	
+
+			if ($isOnMailChimp) {
+		
+				// S/he doesn't want a newsletter, yet exists as a subscriber on MailChimp.
+				// We should unsubscribe him/her from MailChimp.
+				
+				pnc_log('info', __METHOD__ . " > Detected an unsubscribe sent from Pods."); // debug
+
+				self::unsubscribeFromMailChimp($subscriber, $pc_mailChimpListID);
+
+			} else {
 
 			// Pods tells us this subscriber doesn't want newsletters.
 			// Conveniently, this subscriber also doesn't exist on MailChimp yet.
 			
 			// Do nothing.
 
+			}
 		}
 	}
 
@@ -230,7 +234,6 @@ class PodNChimp {
 
 		$interestGroupings = PCDictionary::getMailChimpGroupings($fields);
 		$overwriteExistingGroupingsAtMailChimp = true;
-		$shouldUpdateExistingSubscriber = !($isNewSubscriber == 1);
 
 		// value of each field in the array passed in from the Pods hook
 		// is stored under the key $fields['fields']['someField']['value']
@@ -411,8 +414,7 @@ class PodNChimp {
 		    
 		}
 	}
-}
-
+} // End class declaration.
 
 
 // Register with WordPress hooks, the necessary functions having been defined above.
