@@ -88,7 +88,7 @@ function chimpme_unsubscribe($data) {
     pnc_log('notice', "Unsubscribing $unsubscriber...");
 
 	$query = "SELECT * FROM $dbTableName
-		WHERE $dbEmailColumn = '$unsubscriber'";
+		WHERE $dbEmailColumn = '$unsubscriber'"; // TODO add "limit 1", or otherwise handle the event where there are multiple return results.
 	$subscriber = $wpdb->get_row($query);
 
 	if ($subscriber != null) { // TODO move this check (and the SQL above) into the future DAO class' unsubscribe method.

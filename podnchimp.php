@@ -161,14 +161,45 @@ class PodNChimp {
 		}
 	}
 
-
+	/**
+	 * Takes data from the Pods pre-delete hook and then instructs MailChimp
+	 * accordingly.
+	 * This function should not be attached to the *post*-delete hook
+	 * as the email of the Pod item cannot be retrieved by then.
+	 * 
+	 * @param  stdClass $params
+	 * 	A PHP object containing information on the Pod item being deleted.
+	 *  As of Pods 2.3.6, its properties are:
+	 *  - 'pod': The name of the Pod that the item is deleted from.
+	 *  - 'id': The ID of the item within the Pod.
+	 *  - 'pod_id': (Not verified)
+	 * 	
+	 * @param  array $pods
+	 *  Contains information on the Pod that holds the item to be deleted.
+	 *  As of Pods 2.3.6, a few keys in the array are 'meta_field_id', 'field_slug',
+	 *  'object_hierarchical' and 'join'.
+	 * 
+	 * @return void
+	 */
 	public function deleteFromMailChimp($params, $pods) {
-		// The contents of $params and $pods are logged in /logs/data_from_pods_afterSave_hook.txt
-		
-		// The Pod item being deleted can be found as $params['id'] from the pod
-		// with name $params['pod'] // debug.
-		
-		// TODO		
+
+		global $pc_mailChimpListID;
+
+		// Use the Pods API to find our way back to the subsriber's email, using
+		// info provided by the Pods hook.
+		$nameOfPod = $params->pod;
+		$subscriberPodsID = $params->id;
+
+		$subscriber = pods($nameOfPod, $subscriberPodsID);
+		$subscriberEmail = $subscriber->field('email');
+
+		$isDelete = true;
+
+		pnc_log('info', "Pre-delete hook fired. Preparing to delete $subscriberEmail from MailChimp..."); // debug.
+		self::unsubscribe($subscriberEmail, $pc_mailChimpListID, $isDelete);
+
+		// TODO refactor the above - abstract out the API-specific magic object properties
+		// into helper functions. Eg. getName(), getEmail().
 	}
 
 	/**
@@ -404,7 +435,7 @@ class PodNChimp {
 		} else {
 
 			$message = "";
-			if ($isDelete) {
+			if ($is_delete) {
 				$message = "Deleted from MailChimp.";
 			} else {
 				$message = "Unsubscribed from MailChimp.";
