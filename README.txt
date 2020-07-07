@@ -2,11 +2,13 @@
 Contributors: phtan
 Tags: pods, mailchimp, sync, link, middleman, broker, cms, email
 Tested up to: 3.5.1
-Author URI: http://plus.google.com/106730175494661681756
+Author URI: http://phtan.github.io
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
 Allows two-way syncs between MailChimp and the Pods Framework plug-in.
+
+* As of 7th July 2020, this repository is no longer maintained. *
 
 == Description ==
 
